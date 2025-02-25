@@ -2,24 +2,19 @@
 
 import { useState, useEffect } from "react"
 import {
-  RefreshCcw,
   Search,
-  Heart,
-  Clock,
   Sparkles,
   DollarSign,
   TreePine,
   Utensils,
   Dumbbell,
   Wine,
-  Loader2,
   RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Toggle } from "@/components/ui/toggle"
-import { cn } from "@/lib/utils"
 import confetti from "canvas-confetti"
 
 interface Place {
@@ -31,15 +26,14 @@ interface Place {
 
 export default function Page() {
   const [city, setCity] = useState<string>("")
-  const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<Place[]>([])
   const [filters, setFilters] = useState({
     restaurants: true,
     activities: true,
     drinks: true,
+    outdoors: false,
   })
   const [priceRange, setPriceRange] = useState(0) // 0 means no price filter
-  const [favorites] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
   // Time-based theming
@@ -67,19 +61,19 @@ export default function Page() {
         name: filters.outdoors ? "Garden Terrace Restaurant" : "Sample Restaurant",
         rating: 4.5,
         address: "123 Main St",
-        type: "restaurant",
+        type: "restaurant" as const,
       },
       ...(filters.activities ? [{
         name: filters.outdoors ? "Botanical Gardens" : "Sample Activity",
         rating: 4.7,
         address: "456 Fun Ave",
-        type: "activity",
+        type: "activity" as const,
       }] : []),
       ...(filters.drinks ? [{
         name: filters.outdoors ? "Rooftop Lounge" : "Sample Bar",
         rating: 4.3,
         address: "789 Drink Blvd",
-        type: "drink",
+        type: "drink" as const,
       }] : []),
     ])
 
@@ -94,7 +88,7 @@ export default function Page() {
   const handleSurpriseMe = async () => {
     if (!city) return
     
-    setLoading(true)
+    setIsLoading(true)
     try {
       // Replace this with your actual API endpoint
       const response = await fetch(`/api/places?city=${encodeURIComponent(city)}`, {
@@ -110,7 +104,7 @@ export default function Page() {
     } catch (error) {
       console.error("Error fetching places:", error)
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
