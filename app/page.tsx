@@ -25,8 +25,7 @@ import confetti from "canvas-confetti"
 export default function Page() {
   const [city, setCity] = useState("")
   const [priceRange, setPriceRange] = useState(0) // 0 means no price filter
-  const [mood, setMood] = useState<"romantic" | "casual" | "adventurous">("casual")
-  const [favorites, setFavorites] = useState<string[]>([])
+  const [favorites] = useState<string[]>([])
   const [filters, setFilters] = useState({
     restaurants: true,
     activities: false,
