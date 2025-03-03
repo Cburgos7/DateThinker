@@ -1,42 +1,39 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import {
-  RefreshCcw,
   Search,
-  Heart,
-  Clock,
   Sparkles,
   DollarSign,
   TreePine,
   Utensils,
   Dumbbell,
   Wine,
+  RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Toggle } from "@/components/ui/toggle"
-import { cn } from "@/lib/utils"
 import confetti from "canvas-confetti"
 
+interface Place {
+  name: string
+  rating?: number
+  address?: string
+  type: "restaurant" | "activity" | "drink"
+}
+
 export default function Page() {
-  const [city, setCity] = useState("")
-  const [priceRange, setPriceRange] = useState(0) // 0 means no price filter
-  const [favorites] = useState<string[]>([])
+  const [city, setCity] = useState<string>("")
+  const [results, setResults] = useState<Place[]>([])
   const [filters, setFilters] = useState({
     restaurants: true,
-    activities: false,
-    drinks: false,
+    activities: true,
+    drinks: true,
     outdoors: false,
   })
-  const [results, setResults] = useState<{
-    restaurant?: { name: string; rating: number; address: string; price: number; isOutdoor?: boolean }
-    activity?: { name: string; rating: number; address: string; price: number; isOutdoor?: boolean }
-    drink?: { name: string; rating: number; address: string; price: number; isOutdoor?: boolean }
-  }>({})
+  const [priceRange, setPriceRange] = useState(0) // 0 means no price filter
   const [isLoading, setIsLoading] = useState(false)
 
   // Time-based theming
@@ -59,33 +56,26 @@ export default function Page() {
     // Simulate API call
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    setResults({
-      restaurant: {
+    setResults([
+      {
         name: filters.outdoors ? "Garden Terrace Restaurant" : "Sample Restaurant",
         rating: 4.5,
         address: "123 Main St",
-        price: priceRange,
-        isOutdoor: filters.outdoors,
+        type: "restaurant" as const,
       },
-      ...(filters.activities && {
-        activity: {
-          name: filters.outdoors ? "Botanical Gardens" : "Sample Activity",
-          rating: 4.7,
-          address: "456 Fun Ave",
-          price: priceRange,
-          isOutdoor: filters.outdoors,
-        },
-      }),
-      ...(filters.drinks && {
-        drink: {
-          name: filters.outdoors ? "Rooftop Lounge" : "Sample Bar",
-          rating: 4.3,
-          address: "789 Drink Blvd",
-          price: priceRange,
-          isOutdoor: filters.outdoors,
-        },
-      }),
-    })
+      ...(filters.activities ? [{
+        name: filters.outdoors ? "Botanical Gardens" : "Sample Activity",
+        rating: 4.7,
+        address: "456 Fun Ave",
+        type: "activity" as const,
+      }] : []),
+      ...(filters.drinks ? [{
+        name: filters.outdoors ? "Rooftop Lounge" : "Sample Bar",
+        rating: 4.3,
+        address: "789 Drink Blvd",
+        type: "drink" as const,
+      }] : []),
+    ])
 
     setIsLoading(false)
     confetti({
@@ -95,15 +85,50 @@ export default function Page() {
     })
   }
 
-  const handleSurpriseMe = () => {
-    const randomFilters = {
-      restaurants: Math.random() > 0.5,
-      activities: Math.random() > 0.5,
-      drinks: Math.random() > 0.5,
-      outdoors: Math.random() > 0.5,
+  const handleSurpriseMe = async () => {
+    if (!city) return
+    
+    setIsLoading(true)
+    try {
+      // Replace this with your actual API endpoint
+      const response = await fetch(`/api/places?city=${encodeURIComponent(city)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ filters }),
+      })
+      
+      const data = await response.json()
+      setResults(data)
+    } catch (error) {
+      console.error("Error fetching places:", error)
+    } finally {
+      setIsLoading(false)
     }
-    setFilters(randomFilters)
-    setPriceRange(Math.floor(Math.random() * 3) + 1)
+  }
+
+  const refreshItem = async (type: "restaurant" | "activity" | "drink") => {
+    try {
+      // Replace with your actual API endpoint
+      const response = await fetch(`/api/places/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ city, type }),
+      })
+      
+      const newItem = await response.json()
+      
+      setResults(prev => 
+        prev.map(item => 
+          item.type === type ? newItem : item
+        )
+      )
+    } catch (error) {
+      console.error(`Error refreshing ${type}:`, error)
+    }
   }
 
   return (
@@ -209,104 +234,37 @@ export default function Page() {
             </div>
           </form>
 
-          {Object.keys(results).length > 0 && (
+          {results.length > 0 && (
             <div className="grid gap-6">
-              {results.restaurant && (
-                <ResultCard
-                  title="Restaurant"
-                  result={results.restaurant}
-                  onFavorite={() => {}}
-                  isFavorite={favorites.includes("restaurant")}
-                />
-              )}
-              {results.activity && (
-                <ResultCard
-                  title="Activity"
-                  result={results.activity}
-                  onFavorite={() => {}}
-                  isFavorite={favorites.includes("activity")}
-                />
-              )}
-              {results.drink && (
-                <ResultCard
-                  title="Drinks"
-                  result={results.drink}
-                  onFavorite={() => {}}
-                  isFavorite={favorites.includes("drink")}
-                />
-              )}
+              {results.map((place, index) => (
+                <Card key={index}>
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-semibold text-lg">{place.name}</h3>
+                        {place.rating && (
+                          <p className="text-sm text-gray-600">Rating: {place.rating}/5</p>
+                        )}
+                        {place.address && (
+                          <p className="text-sm text-gray-600">{place.address}</p>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => refreshItem(place.type)}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </div>
       </div>
     </main>
-  )
-}
-
-function ResultCard({
-  title,
-  result,
-  onFavorite,
-  isFavorite,
-}: {
-  title: string
-  result: {
-    name: string
-    rating: number
-    address: string
-    price: number
-    isOutdoor?: boolean
-  }
-  onFavorite: () => void
-  isFavorite: boolean
-}) {
-  return (
-    <Card className="transform transition-all hover:scale-[1.02] group">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-xl font-semibold">{title}</CardTitle>
-          {title === "Restaurant" && <Utensils className="h-4 w-4 text-rose-500" />}
-          {title === "Activity" && <Dumbbell className="h-4 w-4 text-purple-500" />}
-          {title === "Drinks" && <Wine className="h-4 w-4 text-blue-500" />}
-          {result.isOutdoor && <TreePine className="h-4 w-4 text-emerald-500" />}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="icon" variant="ghost" onClick={onFavorite} className="h-8 w-8 text-rose-500">
-            <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
-            <span className="sr-only">Favorite {title}</span>
-          </Button>
-          <Button size="icon" variant="ghost" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-            <RefreshCcw className="h-4 w-4" />
-            <span className="sr-only">Refresh {title}</span>
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-1">
-          <h3 className="font-medium">{result.name}</h3>
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-muted-foreground">
-              {Array.from({ length: Math.round(result.rating) }).map((_, i) => (
-                <span key={i} className="text-yellow-500">
-                  ★
-                </span>
-              ))}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {Array.from({ length: result.price }).map((_, i) => (
-                <span key={i} className="text-green-500">
-                  $
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-      <CardFooter className="flex justify-between items-center">
-        <p className="text-sm text-muted-foreground">{result.address}</p>
-        <Clock className="h-4 w-4 text-muted-foreground" />
-      </CardFooter>
-    </Card>
   )
 }
 
