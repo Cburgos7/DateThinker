@@ -7,16 +7,37 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle } from "lucide-react"
+import { useEffect, useState } from "react"
 
-export default async function AccountPage({
+export default function AccountPage({
   searchParams,
 }: {
   searchParams: { [key: string]: string | string[] | undefined }
 }) {
-  const user = await getCurrentUser()
+  const [user, setUser] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  if (!user) {
-    redirect("/login?redirect=/account")
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const currentUser = await getCurrentUser()
+        if (!currentUser) {
+          redirect("/login?redirect=/account")
+        }
+        setUser(currentUser)
+      } catch (error) {
+        console.error("Error fetching user:", error)
+        redirect("/login?redirect=/account")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchUser()
+  }, [])
+
+  if (isLoading) {
+    return <div>Loading...</div>
   }
 
   const success = searchParams.success
