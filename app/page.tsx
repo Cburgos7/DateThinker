@@ -30,7 +30,7 @@ import { CityAutocomplete } from "@/components/city-autocomplete"
 import { getCurrentUser } from "@/lib/supabase"
 import { checkIsFavorite, toggleFavorite } from "@/app/actions/favorites"
 import { SaveDateModal } from "@/components/save-date-modal"
-import { create } from "canvas-confetti"
+import confetti from "canvas-confetti"
 
 export default function Page() {
   const router = useRouter()
@@ -184,7 +184,7 @@ export default function Page() {
       setResults(searchResults)
 
       // Trigger confetti if we have results
-      create({
+      confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 },

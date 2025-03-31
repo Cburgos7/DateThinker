@@ -2,84 +2,75 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Copy, Check, Mail, Phone } from "lucide-react"
-import { toast } from "@/components/ui/use-toast"
-import type { DateSet } from "@/lib/date-sets"
+import { useToast } from "@/components/ui/use-toast"
+import { DatePlan, DateSet } from "@/lib/types"
 
-export function ShareDatePlan({ dateSet }: { dateSet: DateSet }) {
+interface ShareDatePlanProps {
+  dateSet: DatePlan | DateSet
+}
+
+export function ShareDatePlan({ dateSet }: ShareDatePlanProps) {
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(true)
   const [copied, setCopied] = useState(false)
+  const { toast } = useToast()
 
-  const shareUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/shared/${dateSet.share_id}`
-      : `/shared/${dateSet.share_id}`
+  const shareUrl = `${window.location.origin}/shared/${'share_id' in dateSet ? dateSet.share_id : dateSet.id}`
 
-  const handleCopyLink = () => {
-    if (typeof navigator !== "undefined") {
-      navigator.clipboard.writeText(shareUrl)
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
       toast({
-        title: "Link copied!",
+        title: "Copied to clipboard",
         description: "Share link has been copied to your clipboard.",
       })
-
       setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to copy to clipboard.",
+        variant: "destructive",
+      })
     }
   }
 
-  const handleShareSMS = () => {
-    const message = `Check out my date plan "${dateSet.title}" on DateThinker: ${shareUrl}`
-    if (typeof window !== "undefined") {
-      window.open(`sms:?body=${encodeURIComponent(message)}`)
-    }
+  const shareViaEmail = () => {
+    const subject = encodeURIComponent(`Check out this date plan: ${dateSet.title}`)
+    const body = encodeURIComponent(`I found this date plan on DateThinker and wanted to share it with you: ${shareUrl}`)
+    window.location.href = `mailto:?subject=${subject}&body=${body}`
   }
 
-  const handleShareEmail = () => {
-    const subject = `Date Plan: ${dateSet.title}`
-    const body = `Hi,\n\nI wanted to share this date plan with you: "${dateSet.title}"\n\nDate: ${dateSet.date}\nTime: ${dateSet.start_time} - ${dateSet.end_time}\n\nYou can view the full details here: ${shareUrl}\n\nHope you like it!`
-
-    if (typeof window !== "undefined") {
-      window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`)
-    }
+  const shareViaSMS = () => {
+    window.location.href = `sms:&body=${encodeURIComponent(`Check out this date plan: ${shareUrl}`)}`
   }
 
   return (
     <Dialog open={isShareDialogOpen} onOpenChange={setIsShareDialogOpen}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Share Your Date Plan</DialogTitle>
-          <DialogDescription>Share this date plan with your date or friends.</DialogDescription>
+          <DialogTitle>Share Date Plan</DialogTitle>
         </DialogHeader>
-
-        <div className="space-y-6 py-4">
-          <div className="space-y-2">
-            <label htmlFor="share-link" className="text-sm font-medium">
-              Share Link
-            </label>
-            <div className="flex items-center space-x-2">
-              <Input id="share-link" value={shareUrl} readOnly className="flex-1" />
-              <Button onClick={handleCopyLink} variant="outline" size="icon">
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </Button>
-            </div>
+        <div className="flex items-center space-x-2">
+          <div className="grid flex-1 gap-2">
+            <Input readOnly value={shareUrl} />
           </div>
-
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Share via</h3>
-            <div className="flex space-x-2">
-              <Button onClick={handleShareEmail} variant="outline" className="flex-1">
-                <Mail className="h-4 w-4 mr-2" />
-                Email
-              </Button>
-              <Button onClick={handleShareSMS} variant="outline" className="flex-1">
-                <Phone className="h-4 w-4 mr-2" />
-                SMS
-              </Button>
-            </div>
-          </div>
+          <Button size="sm" className="px-3" onClick={copyToClipboard}>
+            <span className="sr-only">Copy link</span>
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </Button>
+        </div>
+        <div className="flex items-center justify-between">
+          <Button variant="outline" className="w-full mr-2" onClick={shareViaEmail}>
+            <Mail className="h-4 w-4 mr-2" />
+            Email
+          </Button>
+          <Button variant="outline" className="w-full" onClick={shareViaSMS}>
+            <Phone className="h-4 w-4 mr-2" />
+            SMS
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
