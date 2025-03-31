@@ -30,7 +30,6 @@ import { CityAutocomplete } from "@/components/city-autocomplete"
 import { getCurrentUser } from "@/lib/supabase"
 import { checkIsFavorite, toggleFavorite } from "@/app/actions/favorites"
 import { SaveDateModal } from "@/components/save-date-modal"
-import confetti from "canvas-confetti"
 
 export default function Page() {
   const router = useRouter()
@@ -183,12 +182,15 @@ export default function Page() {
 
       setResults(searchResults)
 
-      // Trigger confetti if we have results
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-      })
+      // Trigger confetti if we have results using dynamic import
+      import('canvas-confetti').then((confettiModule) => {
+        const confetti = confettiModule.default;
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+        });
+      });
     } catch (err: any) {
       console.error("Search error:", err)
       setError(err.message || "Failed to find date ideas. Please try again.")
