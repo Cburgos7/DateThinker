@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import * as React from "react"
 
 import { useEffect, useState } from "react"
 
@@ -9,8 +9,8 @@ const TOAST_REMOVE_DELAY = 1000000
 
 type ToastProps = {
   id: string
-  title?: string
-  description?: string
+  title?: React.ReactNode
+  description?: React.ReactNode
   action?: React.ReactNode
   variant?: "default" | "destructive"
 }
@@ -68,6 +68,14 @@ export function useToast() {
       setToastState([...toasts])
     }
   }, [mounted, toasts])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      dispatch({ type: "REMOVE_TOAST", id: toasts[0]?.id })
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   return {
     toasts: toastState,
