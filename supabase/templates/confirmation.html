@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Confirm Your Email</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .button {
+      display: inline-block;
+      background-color: #e11d48;
+      color: white;
+      text-decoration: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .footer {
+      margin-top: 30px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <h1>Welcome to DateThinker!</h1>
+  
+  <p>Thank you for signing up. Please confirm your email address to get started.</p>
+  
+  <p>
+    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup" class="button">
+      Confirm Email Address
+    </a>
+  </p>
+  
+  <p>Or copy and paste this URL into your browser:</p>
+  <p>{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup</p>
+  
+  <p>If you didn't sign up for DateThinker, you can safely ignore this email.</p>
+  
+  <div class="footer">
+    <p>DateThinker - Find Perfect Date Ideas</p>
+    <p>© 2023 DateThinker. All rights reserved.</p>
+  </div>
+</body>
+</html>
+

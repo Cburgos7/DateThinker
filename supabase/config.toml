@@ -1,0 +1,4 @@
+[auth.email.template.confirmation]
+subject = "Confirm Your DateThinker Account"
+content_path = "./supabase/templates/confirmation.html"
+
