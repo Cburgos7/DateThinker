@@ -1,8 +1,8 @@
-import { createClient } from "@/lib/supabase/server"
+import { createServerClient } from "@/lib/supabase/server"
 import { DatePlan } from "@/lib/types"
 
 export async function getDatePlan(id: string): Promise<DatePlan | null> {
-  const supabase = createClient()
+  const supabase = createServerClient()
   
   const { data, error } = await supabase
     .from("date_plans")

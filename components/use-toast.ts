@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-
-import { useEffect, useState } from "react"
+import { useEffect, useState, useReducer } from "react"
 
 const TOAST_LIMIT = 5
 const TOAST_REMOVE_DELAY = 1000000
@@ -28,7 +27,26 @@ type Toast = ToastProps & {
   onOpenChange: (open: boolean) => void
 }
 
-const toasts: Toast[] = []
+type ToastAction =
+  | { type: "ADD_TOAST"; toast: Toast }
+  | { type: "UPDATE_TOAST"; toast: Toast }
+  | { type: "DISMISS_TOAST"; id: string }
+  | { type: "REMOVE_TOAST"; id: string }
+
+function toastReducer(state: Toast[], action: ToastAction): Toast[] {
+  switch (action.type) {
+    case "ADD_TOAST":
+      return [...state, action.toast].slice(-TOAST_LIMIT)
+    case "UPDATE_TOAST":
+      return state.map((toast) => (toast.id === action.toast.id ? action.toast : toast))
+    case "DISMISS_TOAST":
+      return state.map((toast) => (toast.id === action.id ? { ...toast, open: false } : toast))
+    case "REMOVE_TOAST":
+      return state.filter((toast) => toast.id !== action.id)
+    default:
+      return state
+  }
+}
 
 export function toast({ title, description, variant, action }: ToastProps) {
   const id = generateId()
@@ -47,14 +65,12 @@ export function toast({ title, description, variant, action }: ToastProps) {
     },
   }
 
-  toasts.push(toast)
-
   return toast
 }
 
 export function useToast() {
   const [mounted, setMounted] = useState(false)
-  const [toastState, setToastState] = useState<Toast[]>([])
+  const [toastState, dispatch] = useReducer(toastReducer, [])
 
   useEffect(() => {
     setMounted(true)
@@ -64,22 +80,23 @@ export function useToast() {
   }, [])
 
   useEffect(() => {
-    if (mounted) {
-      setToastState([...toasts])
-    }
-  }, [mounted, toasts])
-
-  useEffect(() => {
     const interval = setInterval(() => {
-      dispatch({ type: "REMOVE_TOAST", id: toasts[0]?.id })
-    }, 5000)
+      if (toastState.length > 0) {
+        dispatch({ type: "REMOVE_TOAST", id: toastState[0].id })
+      }
+    }, TOAST_REMOVE_DELAY)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [toastState])
 
   return {
     toasts: toastState,
-    toast,
+    toast: (props: ToastProps) => {
+      const newToast = toast(props)
+      dispatch({ type: "ADD_TOAST", toast: newToast })
+      return newToast
+    },
+    dismiss: (id: string) => dispatch({ type: "DISMISS_TOAST", id }),
   }
 }
 
