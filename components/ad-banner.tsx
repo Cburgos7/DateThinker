@@ -9,7 +9,7 @@ interface AdBannerProps {
 }
 
 export function AdBanner({ adSlot = "1234567890", adFormat = "auto", className = "my-4 text-center" }: AdBannerProps) {
-  const adRef = useRef<HTMLDivElement>(null)
+  const adRef = useRef<HTMLModElement>(null)
 
   useEffect(() => {
     try {
