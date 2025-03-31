@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import { useRef } from "react"
 
 interface AdBannerProps {
   adSlot: string
@@ -7,6 +8,8 @@ interface AdBannerProps {
 }
 
 export function AdBanner({ adSlot, adFormat, className }: AdBannerProps) {
+  const adRef = useRef<HTMLModElement>(null)
+
   return (
     <div className={cn("w-full bg-gray-100 rounded-lg p-4 text-center", className)}>
       <div className="text-sm text-gray-500">Advertisement</div>
