@@ -1,6 +1,7 @@
 import { supabase } from "./supabase"
 import type { PlaceResult } from "@/app/actions"
 import { v4 as uuidv4 } from "uuid"
+import type { Database, Json } from "./database.types" 
 
 export type DateSet = {
   id: string
@@ -68,10 +69,10 @@ export async function createDateSet(
         date,
         start_time: startTime,
         end_time: endTime,
-        places: sanitizedPlaces,
+        places: sanitizedPlaces as any,
         share_id: shareId,
-        notes,
-      })
+        notes: notes || null,
+      } as any)
       .select()
 
     if (error) {
@@ -84,8 +85,10 @@ export async function createDateSet(
       return null
     }
 
-    console.log("Date set created successfully with ID:", data[0].id)
-    return data[0].id
+    // Safely access the id with a type assertion
+    const createdId = (data[0] as any).id
+    console.log("Date set created successfully with ID:", createdId)
+    return createdId
   } catch (error) {
     console.error("Error creating date set:", error)
     return null
@@ -103,12 +106,12 @@ export async function getUserDateSets(userId: string): Promise<DateSet[]> {
     const { data, error } = await supabase
       .from("date_sets")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", userId as any)
       .order("created_at", { ascending: false })
 
     if (error) throw error
 
-    return data as DateSet[]
+    return data as unknown as DateSet[]
   } catch (error) {
     console.error("Error getting user date sets:", error)
     return []
@@ -123,11 +126,15 @@ export async function getDateSetById(id: string): Promise<DateSet | null> {
       return null
     }
 
-    const { data, error } = await supabase.from("date_sets").select("*").eq("id", id).single()
+    const { data, error } = await supabase
+      .from("date_sets")
+      .select("*")
+      .eq("id", id as any)
+      .single()
 
     if (error) throw error
 
-    return data as DateSet
+    return data as unknown as DateSet
   } catch (error) {
     console.error("Error getting date set:", error)
     return null
@@ -142,11 +149,15 @@ export async function getDateSetByShareId(shareId: string): Promise<DateSet | nu
       return null
     }
 
-    const { data, error } = await supabase.from("date_sets").select("*").eq("share_id", shareId).single()
+    const { data, error } = await supabase
+      .from("date_sets")
+      .select("*")
+      .eq("share_id", shareId as any)
+      .single()
 
     if (error) throw error
 
-    return data as DateSet
+    return data as unknown as DateSet
   } catch (error) {
     console.error("Error getting shared date set:", error)
     return null
@@ -161,7 +172,11 @@ export async function deleteDateSet(id: string, userId: string): Promise<boolean
       return false
     }
 
-    const { error } = await supabase.from("date_sets").delete().eq("id", id).eq("user_id", userId)
+    const { error } = await supabase
+      .from("date_sets")
+      .delete()
+      .eq("id", id as any)
+      .eq("user_id", userId as any)
 
     if (error) throw error
 
