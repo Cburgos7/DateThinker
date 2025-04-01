@@ -6,7 +6,7 @@ const nextConfig = {
   swcMinify: true,
   images: {
     domains: ['images.unsplash.com', 'lh3.googleusercontent.com'],
-  }
-};
+  },
+}
 
-module.exports = nextConfig; 
+module.exports = nextConfig 
