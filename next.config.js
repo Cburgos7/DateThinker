@@ -8,6 +8,19 @@ const nextConfig = {
     domains: ['images.unsplash.com', 'lh3.googleusercontent.com'],
     unoptimized: process.env.NODE_ENV === 'development',
   },
+  // Configure webpack to handle pattern matching
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
+  },
+  // Remove experimental features that could cause issues
   experimental: {
     optimizePackageImports: ['@radix-ui/react-icons', 'lucide-react'],
   },
