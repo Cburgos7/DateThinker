@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Using built-in CSS support
+  experimental: {
+    optimizeCss: true,
+    esmExternals: 'loose'
+  },
+  outputFileTracing: false,
+  output: "standalone"
 };
 
 module.exports = nextConfig; 
