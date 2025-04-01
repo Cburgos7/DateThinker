@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    optimizeCss: true
-  }
+  // Using built-in CSS support
 };
 
 module.exports = nextConfig; 
