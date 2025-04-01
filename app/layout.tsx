@@ -3,6 +3,9 @@ import { AuthCheck } from "./auth-check"
 import Script from "next/script"
 import { Inter } from "next/font/google"
 
+// Import global styles
+import "./globals.css"
+
 const inter = Inter({ subsets: ["latin"] })
 
 export default function RootLayout({
