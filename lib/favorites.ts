@@ -18,7 +18,7 @@ export async function addToFavorites(userId: string, place: PlaceResult): Promis
       rating: place.rating,
       price: place.price,
       photo_url: place.photoUrl,
-    })
+    } as any)
 
     if (error) throw error
 
@@ -41,8 +41,8 @@ export async function removeFromFavorites(userId: string, placeId: string): Prom
     const { data, error: findError } = await supabase
       .from("favorites")
       .select("id")
-      .eq("user_id", userId)
-      .like("place_id", `%${placeId}%`)
+      .eq("user_id", userId as any)
+      .like("place_id", `%${placeId}%` as any)
 
     if (findError) {
       console.error("Error finding favorites to delete:", findError)
@@ -56,10 +56,13 @@ export async function removeFromFavorites(userId: string, placeId: string): Prom
 
     // Delete each matching favorite by its ID
     for (const item of data) {
-      const { error: deleteError } = await supabase.from("favorites").delete().eq("id", item.id)
+      const { error: deleteError } = await supabase
+        .from("favorites")
+        .delete()
+        .eq("id", (item as any).id as any)
 
       if (deleteError) {
-        console.error(`Error deleting favorite with ID ${item.id}:`, deleteError)
+        console.error(`Error deleting favorite with ID ${(item as any).id}:`, deleteError)
         return false
       }
     }
@@ -82,12 +85,12 @@ export async function getUserFavorites(userId: string): Promise<PlaceResult[]> {
     const { data, error } = await supabase
       .from("favorites")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", userId as any)
       .order("created_at", { ascending: false })
 
     if (error) throw error
 
-    return data.map((item) => ({
+    return (data as any[]).map((item) => ({
       id: item.place_id,
       name: item.name,
       category: item.category,
@@ -116,8 +119,8 @@ export async function isInFavorites(userId: string, placeId: string): Promise<bo
     const { data, error } = await supabase
       .from("favorites")
       .select("id")
-      .eq("user_id", userId)
-      .like("place_id", `%${placeId}%`)
+      .eq("user_id", userId as any)
+      .like("place_id", `%${placeId}%` as any)
 
     if (error) {
       console.error("Database error checking favorites:", error)

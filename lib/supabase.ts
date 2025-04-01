@@ -36,15 +36,13 @@ export const supabase = (() => {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        flowType: "pkce",
-        // Add the site URL for redirects
-        redirectTo: `${siteUrl}/auth/callback`,
+        flowType: "pkce"
       },
       global: {
         headers: {
           "X-Client-Info": "datethinker-web-app",
         },
-      },
+      }
     })
   } catch (error) {
     console.error("Error creating Supabase client:", error)

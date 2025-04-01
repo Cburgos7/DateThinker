@@ -326,7 +326,7 @@ export async function debugGooglePlacesAPI(city: string): Promise<any> {
     }
   } catch (error) {
     console.error("Error in debug function:", error)
-    return { error: error.message }
+    return { error: error instanceof Error ? error.message : String(error) }
   }
 }
 
