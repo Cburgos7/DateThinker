@@ -1,12 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "NODE_OPTIONS='--max-old-space-size=4096 --stack-size=65500' next build",
-  "installCommand": "npm install",
-  "framework": "nextjs",
-  "builds": [
-    {
-      "src": "next.config.js",
-      "use": "@vercel/next"
-    }
-  ]
+  "buildCommand": "NODE_OPTIONS='--max-old-space-size=4096' next build",
+  "framework": "nextjs"
 }
