@@ -1,12 +1,13 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { sanitizeInput } from "@/lib/api-utils"
 import { getPlacesAutocomplete } from "@/lib/google-places"
 
-export async function GET(request: Request) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { query: string } }
+) {
   try {
-    // Get the query parameter
-    const url = new URL(request.url)
-    const query = url.searchParams.get("query")
+    const { query } = params
 
     if (!query) {
       return NextResponse.json({ predictions: [] }, { status: 400 })
@@ -42,5 +43,4 @@ export async function GET(request: Request) {
     console.error("Error in city autocomplete API:", error)
     return NextResponse.json({ predictions: [], error: "Failed to fetch city suggestions" }, { status: 500 })
   }
-}
-
+} 

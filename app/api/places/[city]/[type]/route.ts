@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { sanitizeInput } from "@/lib/api-utils"
 
-export async function GET(request: Request) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { city: string; type: string } }
+) {
   try {
-    // Get the query parameter
-    const url = new URL(request.url)
-    const city = url.searchParams.get("city")
-    const type = url.searchParams.get("type") || "restaurants"
+    const { city, type = "restaurants" } = params
 
     if (!city) {
       return NextResponse.json({ error: "City parameter is required" }, { status: 400 })
@@ -80,5 +80,4 @@ export async function GET(request: Request) {
     console.error("Error in places API:", error)
     return NextResponse.json({ error: "Failed to fetch places" }, { status: 500 })
   }
-}
-
+} 
