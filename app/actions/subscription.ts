@@ -21,14 +21,14 @@ export async function createMonthlySubscription(formData: FormData) {
   let customerId = user.stripe_customer_id
 
   if (!customerId) {
-    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name)
+    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name || undefined)
 
     if (!customerId) {
       throw new Error("Failed to create Stripe customer")
     }
 
     // Update Supabase user with Stripe customer ID
-    await updateUserSubscription(user.id, user.subscription_status || "free", user.subscription_expiry, customerId)
+    await updateUserSubscription(user.id, "free", user.subscription_expiry, customerId)
   }
 
   // Create checkout session
@@ -57,14 +57,14 @@ export async function createLifetimeMembership(formData: FormData) {
   let customerId = user.stripe_customer_id
 
   if (!customerId) {
-    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name)
+    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name || undefined)
 
     if (!customerId) {
       throw new Error("Failed to create Stripe customer")
     }
 
     // Update Supabase user with Stripe customer ID
-    await updateUserSubscription(user.id, user.subscription_status || "free", user.subscription_expiry, customerId)
+    await updateUserSubscription(user.id, "free", user.subscription_expiry, customerId)
   }
 
   // Create checkout session
