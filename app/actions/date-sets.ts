@@ -9,9 +9,11 @@ import {
   getDateSetByShareId,
   generateICalEvent,
   generateGoogleCalendarLink,
-  type DateSet,
 } from "@/lib/date-sets"
 import type { PlaceResult } from "@/app/actions"
+import type { Database } from "@/lib/database.types"
+
+type DateSet = Database["public"]["Tables"]["date_sets"]["Row"]
 
 export async function saveDateSet(
   title: string,
@@ -40,7 +42,7 @@ export async function saveDateSet(
     const dateSetId = await createDateSet(user.id, title, date, startTime, endTime, places, notes)
 
     if (!dateSetId) {
-      return { success: false, error: "Failed to create date set. Please try again." }
+      return { success: false, error: "Failed to create date set" }
     }
 
     return { success: true, dateSetId }

@@ -1,18 +1,10 @@
 import { supabase } from "./supabase"
 import type { PlaceResult } from "@/app/actions"
 import { v4 as uuidv4 } from "uuid"
+import type { Database } from "./database.types"
 
-export type DateSet = {
-  id: string
-  title: string
-  date: string
-  start_time: string
-  end_time: string
-  places: PlaceResult[]
-  share_id: string
-  notes?: string | null
-  created_at: string
-}
+type DateSet = Database["public"]["Tables"]["date_sets"]["Row"]
+type DateSetInsert = Database["public"]["Tables"]["date_sets"]["Insert"]
 
 // Create a new date set
 export async function createDateSet(
@@ -61,7 +53,7 @@ export async function createDateSet(
 
     const { data, error } = await supabase
       .from("date_sets")
-      .insert({
+      .insert<DateSetInsert>({
         user_id: userId,
         title,
         date,
@@ -107,7 +99,7 @@ export async function getUserDateSets(userId: string): Promise<DateSet[]> {
 
     if (error) throw error
 
-    return data as DateSet[]
+    return data || []
   } catch (error) {
     console.error("Error getting user date sets:", error)
     return []
@@ -126,7 +118,7 @@ export async function getDateSetById(id: string): Promise<DateSet | null> {
 
     if (error) throw error
 
-    return data as DateSet
+    return data
   } catch (error) {
     console.error("Error getting date set:", error)
     return null
@@ -145,7 +137,7 @@ export async function getDateSetByShareId(shareId: string): Promise<DateSet | nu
 
     if (error) throw error
 
-    return data as DateSet
+    return data
   } catch (error) {
     console.error("Error getting shared date set:", error)
     return null
@@ -183,7 +175,7 @@ export function generateICalEvent(dateSet: DateSet): string {
   // Create description with place details
   let description = dateSet.notes ? `${dateSet.notes}\n\n` : ""
 
-  dateSet.places.forEach((place, index) => {
+  dateSet.places.forEach((place: any, index) => {
     description += `${index + 1}. ${place.name}\n`
     description += `   Address: ${place.address}\n`
     if (place.openNow !== undefined) {
@@ -221,7 +213,7 @@ export function generateGoogleCalendarLink(dateSet: DateSet): string {
   // Create description with place details
   let description = dateSet.notes ? `${dateSet.notes}\n\n` : ""
 
-  dateSet.places.forEach((place, index) => {
+  dateSet.places.forEach((place: any, index) => {
     description += `${index + 1}. ${place.name}\n`
     description += `   Address: ${place.address}\n`
     if (place.openNow !== undefined) {

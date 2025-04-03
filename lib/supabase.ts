@@ -7,178 +7,53 @@ export function getSiteUrl() {
   return process.env.NEXT_PUBLIC_BASE_URL || "https://datethinker.com"
 }
 
-// Create a properly configured Supabase client
-export const supabase = (() => {
-  try {
-    // Get environment variables
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    const siteUrl = getSiteUrl()
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    // Log configuration for debugging
-    console.log("Creating Supabase client with:", {
-      urlExists: !!supabaseUrl,
-      keyExists: !!supabaseAnonKey,
-      siteUrl,
-    })
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables")
+}
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error("Missing Supabase environment variables")
-      return null
-    }
-
-    // Ensure URL is properly formatted with https://
-    const formattedUrl = supabaseUrl.startsWith("https://") ? supabaseUrl : `https://${supabaseUrl}`
-
-    // Create client with more robust options
-    return createClient<Database>(formattedUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        flowType: "pkce",
-        // Add the site URL for redirects
-        redirectTo: `${siteUrl}/auth/callback`,
-      },
-      global: {
-        headers: {
-          "X-Client-Info": "datethinker-web-app",
-        },
-      },
-    })
-  } catch (error) {
-    console.error("Error creating Supabase client:", error)
-    return null
-  }
-})()
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
 
 // Types for user data with subscription info
 export type UserWithSubscription = {
   id: string
   email: string
-  full_name?: string | null
-  avatar_url?: string | null
-  subscription_status: "free" | "premium" | "lifetime"
-  subscription_expiry?: string | null
-  stripe_customer_id?: string | null
+  full_name: string | null
+  avatar_url: string | null
+  subscription_status: "free" | "premium" | "pro"
+  subscription_expiry: string | null
+  stripe_customer_id: string | null
 }
 
 // Get the current authenticated user with subscription info
 export async function getCurrentUser(): Promise<UserWithSubscription | null> {
   try {
-    // If supabase client isn't initialized, return null
-    if (!supabase) {
-      console.warn("Supabase client not initialized - missing environment variables")
-      return null
-    }
-
-    // First check if we have a session
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-
-    if (sessionError) {
-      console.error("Error getting session:", sessionError)
-      return null
-    }
-
-    // If no session exists, return null without trying to get the user
-    if (!sessionData.session) {
-      console.log("No active session found")
-      return null
-    }
-
-    // Now that we know we have a session, get the user
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-
-    if (userError) {
-      console.error("Error getting user:", userError)
-      return null
-    }
-
-    if (!userData.user) {
-      console.log("No user data found despite having a session")
-      return null
-    }
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error) throw error
+    if (!user) return null
 
     // Get the user's profile with subscription info
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userData.user.id)
-        .single()
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single()
 
-      if (profileError) {
-        // If the profile doesn't exist yet, we might need to create it
-        if (profileError.code === "PGRST116") {
-          // Create a default profile for the user
-          const defaultProfile = {
-            id: userData.user.id,
-            full_name: userData.user.email?.split("@")[0] || null,
-            avatar_url: null,
-            subscription_status: "free",
-          }
+    if (profileError) {
+      console.error("Error getting profile:", profileError)
+      return null
+    }
 
-          const { error: insertError } = await supabase.from("profiles").insert(defaultProfile)
-
-          if (insertError) {
-            console.error("Error creating profile:", insertError)
-          }
-
-          return {
-            id: userData.user.id,
-            email: userData.user.email!,
-            full_name: userData.user.email?.split("@")[0] || null,
-            avatar_url: null,
-            subscription_status: "free",
-            subscription_expiry: null,
-            stripe_customer_id: null,
-          }
-        } else {
-          console.error("Error getting profile:", profileError)
-          return {
-            id: userData.user.id,
-            email: userData.user.email!,
-            full_name: userData.user.email?.split("@")[0] || null,
-            avatar_url: null,
-            subscription_status: "free",
-            subscription_expiry: null,
-            stripe_customer_id: null,
-          }
-        }
-      }
-
-      if (!profile) {
-        return {
-          id: userData.user.id,
-          email: userData.user.email!,
-          full_name: userData.user.email?.split("@")[0] || null,
-          avatar_url: null,
-          subscription_status: "free",
-          subscription_expiry: null,
-          stripe_customer_id: null,
-        }
-      }
-
-      return {
-        id: userData.user.id,
-        email: userData.user.email!,
-        full_name: profile.full_name,
-        avatar_url: profile.avatar_url,
-        subscription_status: profile.subscription_status || "free",
-        subscription_expiry: profile.subscription_expiry,
-        stripe_customer_id: profile.stripe_customer_id,
-      }
-    } catch (profileError) {
-      console.error("Error in profile handling:", profileError)
-      return {
-        id: userData.user.id,
-        email: userData.user.email!,
-        full_name: userData.user.email?.split("@")[0] || null,
-        avatar_url: null,
-        subscription_status: "free",
-        subscription_expiry: null,
-        stripe_customer_id: null,
-      }
+    return {
+      id: user.id,
+      email: user.email!,
+      full_name: profile?.full_name || user.email?.split("@")[0] || null,
+      avatar_url: profile?.avatar_url || null,
+      subscription_status: profile?.subscription_status || "free",
+      subscription_expiry: profile?.subscription_expiry || null,
+      stripe_customer_id: profile?.stripe_customer_id || null,
     }
   } catch (error) {
     console.error("Error getting current user:", error)
