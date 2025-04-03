@@ -9,15 +9,11 @@ import { Footer } from "@/components/footer"
 export default async function PricingPage() {
   const user = await getCurrentUser()
   const isAuthenticated = !!user
-  const subscriptionStatus = user?.subscription_status || "free"
+  const subscriptionStatus = user?.subscriptionStatus || "free"
 
   return (
     <>
-      <Header 
-        isLoggedIn={isAuthenticated} 
-        userName={user?.full_name || undefined}
-        avatarUrl={user?.avatar_url || undefined}
-      />
+      <Header isLoggedIn={isAuthenticated} userName={user?.full_name} avatarUrl={user?.avatar_url} />
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">

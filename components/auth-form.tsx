@@ -346,7 +346,7 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
       )}
 
       {/* Supabase Status Indicator */}
-      {supabaseStatus === "unavailable" && networkStatus === "online" && (
+      {supabaseStatus === "unavailable" && networkStatus === "online" && supabaseStatus !== "env-error" && (
         <div className="bg-amber-50 p-3 rounded-md flex items-start mt-4">
           <Info className="h-5 w-5 text-amber-500 mr-2 mt-0.5" />
           <div className="text-amber-700 text-sm">

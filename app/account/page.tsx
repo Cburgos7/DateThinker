@@ -7,37 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle } from "lucide-react"
-import { useEffect, useState } from "react"
 
-export default function AccountPage({
+export default async function AccountPage({
   searchParams,
 }: {
   searchParams: { [key: string]: string | string[] | undefined }
 }) {
-  const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const user = await getCurrentUser()
 
-  useEffect(() => {
-    async function fetchUser() {
-      try {
-        const currentUser = await getCurrentUser()
-        if (!currentUser) {
-          redirect("/login?redirect=/account")
-        }
-        setUser(currentUser)
-      } catch (error) {
-        console.error("Error fetching user:", error)
-        redirect("/login?redirect=/account")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchUser()
-  }, [])
-
-  if (isLoading) {
-    return <div>Loading...</div>
+  if (!user) {
+    redirect("/login?redirect=/account")
   }
 
   const success = searchParams.success
@@ -78,7 +57,7 @@ export default function AccountPage({
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Account Created</p>
-                  <p>{user.created_at ? new Date(user.created_at).toLocaleDateString() : "Not set"}</p>
+                  <p>{new Date(user.created_at).toLocaleDateString()}</p>
                 </div>
               </div>
             </CardContent>
@@ -146,9 +125,7 @@ export default function AccountPage({
               )}
 
               {subscriptionStatus === "premium" && (
-                <form action={async (formData) => {
-                  await cancelSubscription();
-                }}>
+                <form action={cancelSubscription}>
                   <Button
                     type="submit"
                     variant="outline"

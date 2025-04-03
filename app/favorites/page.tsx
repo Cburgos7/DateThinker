@@ -14,8 +14,9 @@ export default async function FavoritesPage() {
   if (!user) {
     redirect("/login?redirect=/favorites")
   }
+
   // Check if user has premium access
-  if (user.subscription_status !== "premium" && user.subscription_status !== "lifetime") {
+  if (user.subscriptionStatus !== "premium" && user.subscriptionStatus !== "lifetime") {
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-3xl mx-auto text-center">
@@ -68,12 +69,7 @@ export default async function FavoritesPage() {
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
                     <CardTitle className="text-lg">{place.name}</CardTitle>
-                    <form action={async () => {
-                      const { success } = await removeFromFavoritesAction(user.id, place.id)
-                      if (success) {
-                        window.location.reload()
-                      }
-                    }}>
+                    <form action={removeFromFavoritesAction.bind(null, user.id, place.id)}>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" type="submit">
                         <Trash2 className="h-4 w-4" />
                         <span className="sr-only">Remove from favorites</span>

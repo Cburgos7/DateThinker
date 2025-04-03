@@ -36,13 +36,15 @@ export const supabase = (() => {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        flowType: "pkce"
+        flowType: "pkce",
+        // Add the site URL for redirects
+        redirectTo: `${siteUrl}/auth/callback`,
       },
       global: {
         headers: {
           "X-Client-Info": "datethinker-web-app",
         },
-      }
+      },
     })
   } catch (error) {
     console.error("Error creating Supabase client:", error)
@@ -59,7 +61,6 @@ export type UserWithSubscription = {
   subscription_status: "free" | "premium" | "lifetime"
   subscription_expiry?: string | null
   stripe_customer_id?: string | null
-  created_at?: string
 }
 
 // Get the current authenticated user with subscription info
@@ -131,7 +132,6 @@ export async function getCurrentUser(): Promise<UserWithSubscription | null> {
             subscription_status: "free",
             subscription_expiry: null,
             stripe_customer_id: null,
-            created_at: undefined,
           }
         } else {
           console.error("Error getting profile:", profileError)
@@ -143,7 +143,6 @@ export async function getCurrentUser(): Promise<UserWithSubscription | null> {
             subscription_status: "free",
             subscription_expiry: null,
             stripe_customer_id: null,
-            created_at: undefined,
           }
         }
       }
@@ -157,7 +156,6 @@ export async function getCurrentUser(): Promise<UserWithSubscription | null> {
           subscription_status: "free",
           subscription_expiry: null,
           stripe_customer_id: null,
-          created_at: undefined,
         }
       }
 
@@ -169,7 +167,6 @@ export async function getCurrentUser(): Promise<UserWithSubscription | null> {
         subscription_status: profile.subscription_status || "free",
         subscription_expiry: profile.subscription_expiry,
         stripe_customer_id: profile.stripe_customer_id,
-        created_at: profile.created_at,
       }
     } catch (profileError) {
       console.error("Error in profile handling:", profileError)
@@ -181,7 +178,6 @@ export async function getCurrentUser(): Promise<UserWithSubscription | null> {
         subscription_status: "free",
         subscription_expiry: null,
         stripe_customer_id: null,
-        created_at: undefined,
       }
     }
   } catch (error) {

@@ -6,11 +6,7 @@ export default async function AboutPage() {
   const user = await getCurrentUser()
   return (
     <>
-      <Header 
-        isLoggedIn={!!user} 
-        userName={user?.full_name || undefined}
-        avatarUrl={user?.avatar_url || undefined}
-      />
+      <Header isLoggedIn={!!user} userName={user?.full_name} avatarUrl={user?.avatar_url} />
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <h1 className="text-4xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">
           About DateThinker

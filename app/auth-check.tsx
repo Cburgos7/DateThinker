@@ -30,15 +30,15 @@ export function AuthCheck() {
         // Session status checked
 
         // If user is logged in and on the login page, redirect to home
-        if (hasSession && pathname?.startsWith("/login")) {
+        if (hasSession && pathname.startsWith("/login")) {
           // Redirect to home
           router.replace("/")
         }
 
         // If user is not logged in but on a protected page, redirect to login
-        if (!hasSession && (pathname?.startsWith("/account") || pathname?.startsWith("/favorites"))) {
+        if (!hasSession && (pathname.startsWith("/account") || pathname.startsWith("/favorites"))) {
           // Redirect to login
-          router.replace(`/login?redirect=${encodeURIComponent(pathname || "/")}`)
+          router.replace(`/login?redirect=${encodeURIComponent(pathname)}`)
         }
       } catch (error) {
         console.error("AuthCheck: Error checking auth status:", error)

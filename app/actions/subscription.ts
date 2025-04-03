@@ -21,7 +21,7 @@ export async function createMonthlySubscription(formData: FormData) {
   let customerId = user.stripe_customer_id
 
   if (!customerId) {
-    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name || undefined)
+    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name)
 
     if (!customerId) {
       throw new Error("Failed to create Stripe customer")
@@ -57,7 +57,7 @@ export async function createLifetimeMembership(formData: FormData) {
   let customerId = user.stripe_customer_id
 
   if (!customerId) {
-    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name || undefined)
+    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name)
 
     if (!customerId) {
       throw new Error("Failed to create Stripe customer")

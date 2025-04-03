@@ -3,9 +3,7 @@ import { sanitizeInput } from "./api-utils"
 // Types for Google Places API responses
 export type GooglePlace = {
   id: string
-  displayName?: {
-    text: string
-  }
+  displayName?: string
   name?: string
   formattedAddress?: string
   rating?: number
@@ -326,7 +324,7 @@ export async function debugGooglePlacesAPI(city: string): Promise<any> {
     }
   } catch (error) {
     console.error("Error in debug function:", error)
-    return { error: error instanceof Error ? error.message : String(error) }
+    return { error: error.message }
   }
 }
 

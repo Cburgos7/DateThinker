@@ -11,7 +11,7 @@ export function getStripe(): Stripe {
     }
 
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: "2023-10-16", // API version for Stripe package v14.7.0
+      apiVersion: "2023-10-16", // Use the latest API version
     })
   }
 

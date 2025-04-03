@@ -25,7 +25,7 @@ export default async function SharedDatePlanPage({
 
   return (
     <>
-      <Header isLoggedIn={!!user} userName={user?.full_name || undefined} avatarUrl={user?.avatar_url || undefined} />
+      <Header isLoggedIn={!!user} userName={user?.full_name} avatarUrl={user?.avatar_url} />
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center justify-between mb-6">

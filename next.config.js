@@ -62,22 +62,6 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    optimizeCss: false,
-    outputFileTracingExcludes: {
-      '*': [
-        '**/@swc/**',
-        '**/@esbuild/**',
-        '**/node_modules/**',
-      ],
-    },
-  },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization.moduleIds = 'deterministic';
-    }
-    return config;
-  },
 }
 
 module.exports = nextConfig

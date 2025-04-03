@@ -277,12 +277,6 @@ export function CityAutocomplete({
     setShowPredictions(false)
   }
 
-  useEffect(() => {
-    if (fallbackCities.length > 0) {
-      setShowPredictions(true)
-    }
-  }, [fallbackCities.length])
-
   return (
     <div className="relative">
       <div className="relative">
