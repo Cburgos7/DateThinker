@@ -30,7 +30,7 @@ import { CityAutocomplete } from "@/components/city-autocomplete"
 import { getCurrentUser } from "@/lib/supabase"
 import { checkIsFavorite, toggleFavorite } from "@/app/actions/favorites"
 import { SaveDateModal } from "@/components/save-date-modal"
-import confetti from "canvas-confetti"
+import * as confetti from "canvas-confetti"
 
 export default function Page() {
   const router = useRouter()
