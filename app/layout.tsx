@@ -1,9 +1,19 @@
+import "./globals.css"
 import type React from "react"
 import { AuthCheck } from "./auth-check"
 import Script from "next/script"
 import { Inter } from "next/font/google"
 
-const inter = Inter({ subsets: ["latin"] })
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"]
+})
+
+export const metadata = {
+  title: "DateThinker - Find Perfect Date Ideas",
+  description: "Discover the perfect date spots in your city",
+}
 
 export default function RootLayout({
   children,
@@ -11,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="font-sans">
       <head>
         <meta name="google-adsense-account" content="ca-pub-5187820785541561" />
         <Script
@@ -22,7 +32,7 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
       </head>
-      <body className={inter.className}>
+      <body>
         <AuthCheck />
         {children}
       </body>
