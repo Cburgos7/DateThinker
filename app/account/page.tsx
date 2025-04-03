@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/supabase"
 import { cancelSubscription } from "@/app/actions/subscription"
@@ -8,15 +9,35 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle } from "lucide-react"
 
-export default async function AccountPage({
+export default function AccountPage({
   searchParams,
 }: {
   searchParams: { [key: string]: string | string[] | undefined }
 }) {
-  const user = await getCurrentUser()
+  const [user, setUser] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  if (!user) {
-    redirect("/login?redirect=/account")
+  useEffect(() => {
+    async function fetchUser() {
+      try {
+        const currentUser = await getCurrentUser()
+        if (!currentUser) {
+          redirect("/login?redirect=/account")
+        }
+        setUser(currentUser)
+      } catch (error) {
+        console.error("Error fetching user:", error)
+        redirect("/login?redirect=/account")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchUser()
+  }, [])
+
+  if (isLoading) {
+    return <div>Loading...</div>
   }
 
   const success = searchParams.success
@@ -57,7 +78,7 @@ export default async function AccountPage({
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Account Created</p>
-                  <p>{new Date(user.created_at).toLocaleDateString()}</p>
+                  <p>{user.created_at ? new Date(user.created_at).toLocaleDateString() : "Not set"}</p>
                 </div>
               </div>
             </CardContent>
@@ -125,7 +146,9 @@ export default async function AccountPage({
               )}
 
               {subscriptionStatus === "premium" && (
-                <form action={cancelSubscription}>
+                <form action={async (formData) => {
+                  await cancelSubscription();
+                }}>
                   <Button
                     type="submit"
                     variant="outline"
