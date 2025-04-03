@@ -4,9 +4,9 @@ import { debugGooglePlacesAPI } from "@/lib/google-places"
 
 export async function GET(request: Request) {
   try {
-    // Get the query parameter
-    const url = new URL(request.url)
-    const city = url.searchParams.get("city")
+    // Get the query parameter from the request URL
+    const { searchParams } = new URL(request.url)
+    const city = searchParams.get("city")
 
     if (!city) {
       return NextResponse.json({ error: "City parameter is required" }, { status: 400 })

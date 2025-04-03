@@ -3,10 +3,10 @@ import { sanitizeInput } from "@/lib/api-utils"
 
 export async function GET(request: Request) {
   try {
-    // Get the query parameters
-    const url = new URL(request.url)
-    const photoName = url.searchParams.get("photoName")
-    const maxWidth = url.searchParams.get("maxWidth") || "600"
+    // Get the query parameters from the request URL
+    const { searchParams } = new URL(request.url)
+    const photoName = searchParams.get("photoName")
+    const maxWidth = searchParams.get("maxWidth") || "600"
 
     if (!photoName) {
       return NextResponse.json({ error: "Photo name is required" }, { status: 400 })

@@ -3,10 +3,10 @@ import { sanitizeInput } from "@/lib/api-utils"
 
 export async function GET(request: Request) {
   try {
-    // Get the query parameter
-    const url = new URL(request.url)
-    const city = url.searchParams.get("city")
-    const type = url.searchParams.get("type") || "restaurants"
+    // Get the query parameters from the request URL
+    const { searchParams } = new URL(request.url)
+    const city = searchParams.get("city")
+    const type = searchParams.get("type") || "restaurants"
 
     if (!city) {
       return NextResponse.json({ error: "City parameter is required" }, { status: 400 })

@@ -4,9 +4,9 @@ import { getPlacesAutocomplete } from "@/lib/google-places"
 
 export async function GET(request: Request) {
   try {
-    // Get the query parameter
-    const url = new URL(request.url)
-    const query = url.searchParams.get("query")
+    // Get the query parameter from the request URL
+    const { searchParams } = new URL(request.url)
+    const query = searchParams.get("query")
 
     if (!query) {
       return NextResponse.json({ predictions: [] }, { status: 400 })
