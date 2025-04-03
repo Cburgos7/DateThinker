@@ -129,7 +129,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
           const randomIndex = Math.floor(Math.random() * Math.min(restaurants.length, 5))
           const restaurant = restaurants[randomIndex]
           console.log(
-            `Selected restaurant: ${restaurant.displayName?.text || restaurant.name}, ${restaurant.formattedAddress}`,
+            `Selected restaurant: ${restaurant.displayName || restaurant.name}, ${restaurant.formattedAddress}`,
           )
           results.restaurant = convertGooglePlaceToResult(restaurant, "restaurant")
         } else {
@@ -159,7 +159,9 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
         if (activities.length > 0) {
           const randomIndex = Math.floor(Math.random() * Math.min(activities.length, 5))
           const activity = activities[randomIndex]
-          console.log(`Selected activity: ${activity.displayName?.text || activity.name}, ${activity.formattedAddress}`)
+          console.log(
+            `Selected activity: ${activity.displayName || activity.name}, ${activity.formattedAddress}`,
+          )
           results.activity = convertGooglePlaceToResult(activity, "activity")
         } else {
           // Try a more generic search if specific type fails
@@ -178,7 +180,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
             const randomIndex = Math.floor(Math.random() * Math.min(genericActivities.length, 5))
             const activity = genericActivities[randomIndex]
             console.log(
-              `Selected generic activity: ${activity.displayName?.text || activity.name}, ${activity.formattedAddress}`,
+              `Selected generic activity: ${activity.displayName || activity.name}, ${activity.formattedAddress}`,
             )
             results.activity = convertGooglePlaceToResult(activity, "activity")
           } else {
@@ -210,7 +212,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
           const randomIndex = Math.floor(Math.random() * Math.min(drinkPlaces.length, 5))
           const drinkPlace = drinkPlaces[randomIndex]
           console.log(
-            `Selected drink place: ${drinkPlace.displayName?.text || drinkPlace.name}, ${drinkPlace.formattedAddress}`,
+            `Selected drink place: ${drinkPlace.displayName || drinkPlace.name}, ${drinkPlace.formattedAddress}`,
           )
           results.drink = convertGooglePlaceToResult(drinkPlace, "drink")
         } else {
@@ -241,7 +243,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
           const randomIndex = Math.floor(Math.random() * Math.min(outdoorActivities.length, 5))
           const outdoorActivity = outdoorActivities[randomIndex]
           console.log(
-            `Selected outdoor activity: ${outdoorActivity.displayName?.text || outdoorActivity.name}, ${outdoorActivity.formattedAddress}`,
+            `Selected outdoor activity: ${outdoorActivity.displayName || outdoorActivity.name}, ${outdoorActivity.formattedAddress}`,
           )
           results.outdoor = convertGooglePlaceToResult(outdoorActivity, "outdoor")
         } else {
@@ -339,7 +341,7 @@ export async function refreshPlace(
           const randomIndex = Math.floor(Math.random() * Math.min(filteredPlaces.length, 5))
           const selectedPlace = filteredPlaces[randomIndex]
           console.log(
-            `Selected ${type} for refresh: ${selectedPlace.displayName?.text || selectedPlace.name}, ${selectedPlace.formattedAddress}`,
+            `Selected ${type} for refresh: ${selectedPlace.displayName || selectedPlace.name}, ${selectedPlace.formattedAddress}`,
           )
           return convertGooglePlaceToResult(filteredPlaces[randomIndex], type)
         }
@@ -379,7 +381,7 @@ function convertGooglePlaceToResult(
 
   return {
     id: place.id,
-    name: place.displayName?.text || place.name || "",
+    name: place.displayName || place.name || "",
     rating: place.rating || 4.0,
     address: place.formattedAddress || "",
     price: place.priceLevel || 1,
