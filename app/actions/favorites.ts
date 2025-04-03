@@ -1,29 +1,57 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 import { addToFavorites, removeFromFavorites, isInFavorites } from "@/lib/favorites"
 import type { PlaceResult } from "@/app/actions"
 
-export async function toggleFavorite(place: PlaceResult): Promise<{ success: boolean; isFavorite: boolean }> {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    return { success: false, isFavorite: false }
-  }
-
-  // Check if user has premium access
-  if (user.subscription_status !== "premium" && user.subscription_status !== "lifetime") {
-    return { success: false, isFavorite: false }
-  }
-
+export async function toggleFavorite(place: any): Promise<{ success: boolean; isFavorite: boolean }> {
   try {
-    const isFavorite = await isInFavorites(user.id, place.id)
+    const user = await getCurrentUser()
 
-    if (isFavorite) {
-      await removeFromFavorites(user.id, place.id)
+    if (!user) {
+      return { success: false, isFavorite: false }
+    }
+
+    // Check if user has premium access
+    if (user.subscription_status === "free") {
+      return { success: false, isFavorite: false }
+    }
+
+    // Check if place is already favorited
+    const { data: existingFavorite } = await supabase
+      .from("favorites")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("place_id", place.id)
+      .single()
+
+    if (existingFavorite) {
+      // Remove from favorites
+      const { error } = await supabase
+        .from("favorites")
+        .delete()
+        .eq("id", existingFavorite.id)
+
+      if (error) {
+        console.error("Error removing favorite:", error)
+        return { success: false, isFavorite: false }
+      }
+
       return { success: true, isFavorite: false }
     } else {
-      await addToFavorites(user.id, place)
+      // Add to favorites
+      const { error } = await supabase.from("favorites").insert({
+        user_id: user.id,
+        place_id: place.id,
+        place_data: place,
+      })
+
+      if (error) {
+        console.error("Error adding favorite:", error)
+        return { success: false, isFavorite: false }
+      }
+
       return { success: true, isFavorite: true }
     }
   } catch (error) {
@@ -33,16 +61,23 @@ export async function toggleFavorite(place: PlaceResult): Promise<{ success: boo
 }
 
 export async function checkIsFavorite(placeId: string): Promise<boolean> {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    return false
-  }
-
   try {
-    return await isInFavorites(user.id, placeId)
+    const user = await getCurrentUser()
+
+    if (!user) {
+      return false
+    }
+
+    const { data } = await supabase
+      .from("favorites")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("place_id", placeId)
+      .single()
+
+    return !!data
   } catch (error) {
-    console.error("Error checking favorite status:", error)
+    console.error("Error checking favorite:", error)
     return false
   }
 }
