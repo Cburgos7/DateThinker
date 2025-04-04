@@ -32,7 +32,7 @@ export const supabase = (() => {
     const finalUrl = `https://${formattedUrl}`
 
     // Create client with more robust options
-    return createClient<Database>(finalUrl, supabaseAnonKey, {
+    const client = createClient<Database>(finalUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -45,6 +45,14 @@ export const supabase = (() => {
         },
       }
     })
+
+    // Test the client with a simple operation
+    client.auth.getSession().catch(error => {
+      console.error("Error testing Supabase client:", error)
+      return null
+    })
+
+    return client
   } catch (error) {
     console.error("Error creating Supabase client:", error)
     return null
