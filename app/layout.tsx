@@ -2,7 +2,7 @@ import type React from "react"
 import { AuthCheck } from "./auth-check"
 import Script from "next/script"
 import { Inter } from "next/font/google"
-
+import "./globals.css" 
 const inter = Inter({ subsets: ["latin"] })
 
 export default function RootLayout({
