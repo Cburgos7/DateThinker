@@ -12,13 +12,27 @@ export default async function LoginPage({
   // Check if user is already logged in
   let isLoggedIn = false
 
-  if (supabase) {
+  try {
+    if (!supabase) {
+      console.error("Supabase client not initialized")
+      throw new Error("Authentication service not available")
+    }
+
     const {
       data: { session },
+      error,
     } = await supabase.auth.getSession()
-    isLoggedIn = !!session
 
+    if (error) {
+      console.error("Error getting session:", error)
+      throw error
+    }
+
+    isLoggedIn = !!session
     console.log("Login page - User session check:", isLoggedIn ? "Logged in" : "Not logged in")
+  } catch (error) {
+    console.error("Error in login page:", error)
+    // Don't throw the error, just continue with isLoggedIn = false
   }
 
   // If already logged in, redirect to home or the requested page

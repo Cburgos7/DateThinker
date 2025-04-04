@@ -28,10 +28,11 @@ export const supabase = (() => {
     }
 
     // Ensure URL is properly formatted with https://
-    const formattedUrl = supabaseUrl.startsWith("https://") ? supabaseUrl : `https://${supabaseUrl}`
+    const formattedUrl = supabaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
+    const finalUrl = `https://${formattedUrl}`
 
     // Create client with more robust options
-    return createClient<Database>(formattedUrl, supabaseAnonKey, {
+    return createClient<Database>(finalUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
