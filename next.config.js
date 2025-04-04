@@ -64,6 +64,9 @@ const nextConfig = {
   },
   experimental: {
     optimizeCss: false,
+    serverActions: {
+      allowedOrigins: ['localhost:3000', 'datethinker.com'],
+    },
   },
   outputFileTracingExcludes: {
     '*': [
@@ -78,6 +81,7 @@ const nextConfig = {
     }
     return config;
   },
+  swcMinify: true,
 }
 
 module.exports = nextConfig
