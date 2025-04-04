@@ -7,7 +7,8 @@ import { Inter } from "next/font/google"
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700"]
+  adjustFontFallback: true,
+  preload: true,
 })
 
 export const metadata = {
@@ -21,18 +22,18 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="font-sans">
+    <html lang="en" className={`${inter.className} font-sans`}>
       <head>
         <meta name="google-adsense-account" content="ca-pub-5187820785541561" />
         <Script
           id="adsbygoogle-init"
           strategy="afterInteractive"
           async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5187820785541561"
+          src="https://pagead2.googlesyndirect.com/pagead/js/adsbygoogle.js?client=ca-pub-5187820785541561"
           crossOrigin="anonymous"
         />
       </head>
-      <body>
+      <body className="antialiased">
         <AuthCheck />
         {children}
       </body>
