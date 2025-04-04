@@ -100,7 +100,13 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
       ),
     )
 
-    const results: SearchResults = {}
+    // Initialize results with an empty object
+    const results: SearchResults = {
+      restaurant: undefined,
+      activity: undefined,
+      drink: undefined,
+      outdoor: undefined
+    }
 
     // Get the price range for Google Places API (0-4)
     const priceLevel = validParams.priceRange || undefined
