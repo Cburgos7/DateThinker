@@ -64,13 +64,16 @@ const nextConfig = {
   },
   experimental: {
     optimizeCss: false,
-    outputFileTracingExcludes: {
-      '*': [
-        '**/@swc/**',
-        '**/@esbuild/**',
-        '**/node_modules/**',
-      ],
+    serverActions: {
+      allowedOrigins: ['localhost:3000', 'datethinker.com'],
     },
+  },
+  outputFileTracingExcludes: {
+    '*': [
+      '**/@swc/**',
+      '**/@esbuild/**',
+      '**/node_modules/**',
+    ],
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {

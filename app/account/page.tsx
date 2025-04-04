@@ -8,14 +8,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle } from "lucide-react"
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 
-export default function AccountPage({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string | string[] | undefined }
-}) {
+export default function AccountPage() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const searchParams = useSearchParams()
+  const success = searchParams.get("success")
 
   useEffect(() => {
     async function fetchUser() {
@@ -40,7 +39,6 @@ export default function AccountPage({
     return <div>Loading...</div>
   }
 
-  const success = searchParams.success
   const subscriptionStatus = user.subscription_status || "free"
   const subscriptionExpiry = user.subscription_expiry ? new Date(user.subscription_expiry).toLocaleDateString() : null
 
@@ -107,101 +105,34 @@ export default function AccountPage({
                       : "Free"}
                 </Badge>
               </div>
-              <CardDescription>Manage your subscription plan</CardDescription>
+              <CardDescription>Manage your subscription</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {subscriptionStatus === "free" && (
-                  <p>You are currently on the free plan. Upgrade to Premium for additional features.</p>
-                )}
-
-                {subscriptionStatus === "premium" && (
-                  <>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Plan</p>
-                      <p>Premium Monthly ($4.99/month)</p>
-                    </div>
-                    {subscriptionExpiry && (
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Next Billing Date</p>
-                        <p>{subscriptionExpiry}</p>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {subscriptionStatus === "lifetime" && (
-                  <p>You have lifetime access to all premium features. Thank you for your support!</p>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Status</p>
+                  <p className="capitalize">{subscriptionStatus}</p>
+                </div>
+                {subscriptionExpiry && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Expiry Date</p>
+                    <p>{subscriptionExpiry}</p>
+                  </div>
                 )}
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col items-start space-y-2 sm:flex-row sm:space-x-2 sm:space-y-0">
+            <CardFooter>
+              {subscriptionStatus === "premium" && (
+                <Button variant="destructive" onClick={() => cancelSubscription()}>
+                  Cancel Subscription
+                </Button>
+              )}
               {subscriptionStatus === "free" && (
-                <Button
-                  className="w-full sm:w-auto bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
-                  onClick={() => redirect("/pricing")}
-                >
+                <Button variant="default" className="bg-gradient-to-r from-rose-500 to-purple-500">
                   Upgrade to Premium
                 </Button>
               )}
-
-              {subscriptionStatus === "premium" && (
-                <form action={async (formData) => {
-                  await cancelSubscription();
-                }}>
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    className="w-full sm:w-auto text-red-500 border-red-200 hover:bg-red-50"
-                  >
-                    Cancel Subscription
-                  </Button>
-                </form>
-              )}
-
-              {subscriptionStatus !== "lifetime" && (
-                <Button variant="outline" className="w-full sm:w-auto" onClick={() => redirect("/pricing")}>
-                  View Plans
-                </Button>
-              )}
             </CardFooter>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Billing History</CardTitle>
-              <CardDescription>View your past payments</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {subscriptionStatus === "free" ? (
-                <div className="flex items-center justify-center py-6">
-                  <p className="text-muted-foreground">No billing history available</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="border rounded-lg divide-y">
-                    <div className="grid grid-cols-3 p-4 font-medium">
-                      <div>Date</div>
-                      <div>Description</div>
-                      <div>Amount</div>
-                    </div>
-                    {subscriptionStatus === "lifetime" ? (
-                      <div className="grid grid-cols-3 p-4">
-                        <div>{new Date().toLocaleDateString()}</div>
-                        <div>Lifetime Membership</div>
-                        <div>$99.00</div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 p-4">
-                        <div>{new Date().toLocaleDateString()}</div>
-                        <div>Monthly Subscription</div>
-                        <div>$4.99</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CardContent>
           </Card>
         </div>
       </div>
