@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getDateSetById, generateICalEvent } from "@/lib/date-sets"
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest) {
   try {
-    const dateSet = await getDateSetById(params.id)
+    const id = request.nextUrl.pathname.split("/").pop()
+    if (!id) {
+      return NextResponse.json({ error: "Missing date set ID" }, { status: 400 })
+    }
+
+    const dateSet = await getDateSetById(id)
 
     if (!dateSet) {
       return NextResponse.json({ error: "Date set not found" }, { status: 404 })
@@ -21,5 +26,4 @@ export async function GET(request: Request, { params }: { params: { id: string }
     console.error("Error generating calendar file:", error)
     return NextResponse.json({ error: "Failed to generate calendar file" }, { status: 500 })
   }
-}
-
+} 

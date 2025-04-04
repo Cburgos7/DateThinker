@@ -1,49 +1,45 @@
-import { redirect } from "next/navigation"
+"use client"
+
+import { useEffect } from "react"
+import { redirect, useSearchParams } from "next/navigation"
 import { AuthForm } from "@/components/auth-form"
 import { supabase } from "@/lib/supabase"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: { [key: string]: string | string[] | undefined }
-}) {
-  // Check if user is already logged in
-  let isLoggedIn = false
+export default function LoginPage() {
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get("redirect") || "/"
 
-  try {
-    if (!supabase) {
-      console.error("Supabase client not initialized")
-      throw new Error("Authentication service not available")
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        if (!supabase) {
+          console.error("Supabase client not initialized")
+          throw new Error("Authentication service not available")
+        }
+
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession()
+
+        if (error) {
+          console.error("Error getting session:", error)
+          throw error
+        }
+
+        if (session) {
+          console.log("User already logged in, redirecting to:", redirectTo)
+          redirect(redirectTo)
+        }
+      } catch (error) {
+        console.error("Error in login page:", error)
+      }
     }
 
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.getSession()
-
-    if (error) {
-      console.error("Error getting session:", error)
-      throw error
-    }
-
-    isLoggedIn = !!session
-    console.log("Login page - User session check:", isLoggedIn ? "Logged in" : "Not logged in")
-  } catch (error) {
-    console.error("Error in login page:", error)
-    // Don't throw the error, just continue with isLoggedIn = false
-  }
-
-  // Get the redirect URL from searchParams
-  const params = await searchParams
-  const redirectTo = typeof params.redirect === "string" ? params.redirect : "/"
-
-  // If already logged in, redirect to home or the requested page
-  if (isLoggedIn) {
-    console.log("User already logged in, redirecting to:", redirectTo)
-    redirect(redirectTo)
-  }
+    checkSession()
+  }, [redirectTo])
 
   return (
     <>
