@@ -35,14 +35,15 @@ export default async function LoginPage({
     // Don't throw the error, just continue with isLoggedIn = false
   }
 
+  // Get the redirect URL from searchParams
+  const params = await searchParams
+  const redirectTo = typeof params.redirect === "string" ? params.redirect : "/"
+
   // If already logged in, redirect to home or the requested page
   if (isLoggedIn) {
-    const redirectTo = typeof searchParams.redirect === "string" ? searchParams.redirect : "/"
     console.log("User already logged in, redirecting to:", redirectTo)
     redirect(redirectTo)
   }
-
-  const redirectTo = typeof searchParams.redirect === "string" ? searchParams.redirect : "/"
 
   return (
     <>
