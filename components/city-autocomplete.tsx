@@ -181,7 +181,13 @@ export function CityAutocomplete({
         filterFallbackCities(value)
 
         // Try to get predictions from our API route
-        const response = await fetch(`/api/city-autocomplete?query=${encodeURIComponent(value)}`)
+        const response = await fetch(`/api/city-autocomplete`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ query: value }),
+        })
 
         if (!response.ok) {
           // Use fallback if API fails
