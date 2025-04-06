@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { searchPlaces } from "@/app/actions"
+import { searchPlaces } from "@/lib/search-utils"
 
 export async function POST(request: Request) {
   try {

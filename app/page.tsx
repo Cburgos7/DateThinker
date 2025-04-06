@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Toggle } from "@/components/ui/toggle"
 import { cn } from "@/lib/utils"
-import { searchPlaces, refreshPlace, type PlaceResult, type SearchResults } from "./actions"
+import { type PlaceResult, type SearchResults, refreshPlace } from "@/lib/search-utils"
 import { AdBanner } from "@/components/ads/ad-banner"
 import { Footer } from "@/components/footer"
 import { Header } from "@/components/header"
@@ -166,33 +166,25 @@ export default function Page() {
     try {
       console.log("Searching with filters:", searchFilters)
 
-      const response = await fetch('/api/search', {
-        method: 'POST',
+      const response = await fetch("/api/search", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           city,
-          placeId,
           filters: searchFilters,
           priceRange: searchPriceRange,
         }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to search places')
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to search places")
       }
 
-      const searchResults = await response.json()
-
-      console.log("Search results:", searchResults)
-
-      if (Object.keys(searchResults).length === 0) {
-        setError("No results found. Try different filters or another city.")
-        return
-      }
-
-      setResults(searchResults)
+      const data = await response.json()
+      setResults(data)
 
       // Trigger confetti if we have results using dynamic import
       import('canvas-confetti').then((confettiModule) => {
@@ -212,25 +204,25 @@ export default function Page() {
   }
 
   // Update the handleRefresh function to handle errors better
-  const handleRefresh = async (category: keyof SearchResults) => {
-    setRefreshing((prev) => ({ ...prev, [category]: true }))
+  const handleRefresh = async (type: "restaurant" | "activity" | "drink" | "outdoor") => {
+    setRefreshing((prev) => ({ ...prev, [type]: true }))
     setError(null)
 
     try {
-      if (results[category]) {
+      if (results[type]) {
         const refreshedPlace = await refreshPlace(
-          results[category]!.category,
+          results[type]!.category,
           city,
-          results[category]!.placeId,
+          results[type]!.placeId,
           priceRange,
         )
-        setResults((prevResults) => ({ ...prevResults, [category]: refreshedPlace }))
+        setResults((prevResults) => ({ ...prevResults, [type]: refreshedPlace }))
       }
     } catch (error: any) {
-      console.error(`Failed to refresh ${category}:`, error)
-      setError(`Couldn't find another ${category}. Try a different city or filter.`)
+      console.error(`Failed to refresh ${type}:`, error)
+      setError(`Couldn't find another ${type}. Try a different city or filter.`)
     } finally {
-      setRefreshing((prev) => ({ ...prev, [category]: false }))
+      setRefreshing((prev) => ({ ...prev, [type]: false }))
     }
   }
 
