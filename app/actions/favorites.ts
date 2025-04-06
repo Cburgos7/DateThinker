@@ -2,7 +2,7 @@
 
 import { getCurrentUser } from "@/lib/supabase"
 import { addToFavorites, removeFromFavorites, isInFavorites } from "@/lib/favorites"
-import type { PlaceResult } from "@/app/actions"
+import type { PlaceResult } from "@/lib/search-utils"
 
 export async function toggleFavorite(place: PlaceResult): Promise<{ success: boolean; isFavorite: boolean }> {
   const user = await getCurrentUser()

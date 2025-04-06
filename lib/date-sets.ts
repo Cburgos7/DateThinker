@@ -1,5 +1,5 @@
 import { supabase } from "./supabase"
-import type { PlaceResult } from "@/app/actions"
+import type { PlaceResult } from "@/lib/search-utils"
 import { v4 as uuidv4 } from "uuid"
 import type { Database, Json } from "./database.types" 
 

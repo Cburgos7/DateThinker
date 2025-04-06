@@ -1,5 +1,5 @@
 import { supabase } from "./supabase"
-import type { PlaceResult } from "@/app/actions"
+import type { PlaceResult } from "@/lib/search-utils"
 
 // Add a place to user's favorites
 export async function addToFavorites(userId: string, place: PlaceResult): Promise<boolean> {
