@@ -166,12 +166,24 @@ export default function Page() {
     try {
       console.log("Searching with filters:", searchFilters)
 
-      const searchResults = await searchPlaces({
-        city,
-        placeId,
-        filters: searchFilters,
-        priceRange: searchPriceRange,
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          city,
+          placeId,
+          filters: searchFilters,
+          priceRange: searchPriceRange,
+        }),
       })
+
+      if (!response.ok) {
+        throw new Error('Failed to search places')
+      }
+
+      const searchResults = await response.json()
 
       console.log("Search results:", searchResults)
 
