@@ -9,7 +9,7 @@ import { Footer } from "@/components/footer"
 
 export default function LoginPage() {
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirect") || "/"
+  const redirectTo = searchParams?.get("redirect") || "/"
 
   useEffect(() => {
     async function checkSession() {

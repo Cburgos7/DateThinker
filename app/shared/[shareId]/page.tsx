@@ -10,10 +10,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { MapPin, Calendar, Clock, Utensils, Coffee, Wine, Star } from "lucide-react"
 import { getCurrentUser } from "@/lib/supabase"
+import Image from "next/image"
 
 export default function SharedDatePage() {
   const params = useParams()
-  const shareId = params.shareId as string
+  const shareId = params?.shareId as string || ""
   const [dateSet, setDateSet] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
@@ -35,7 +36,11 @@ export default function SharedDatePage() {
       }
     }
 
-    loadData()
+    if (shareId) {
+      loadData()
+    } else {
+      setIsLoading(false)
+    }
   }, [shareId])
 
   if (isLoading) {
@@ -133,9 +138,11 @@ export default function SharedDatePage() {
                 <CardContent>
                   <div className="space-y-4">
                     {place.image && (
-                      <img
+                      <Image
                         src={place.image}
                         alt={place.name}
+                        width={500}
+                        height={300}
                         className="w-full h-48 object-cover rounded-lg"
                       />
                     )}

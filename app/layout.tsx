@@ -1,8 +1,9 @@
 import type React from "react"
-import { AuthCheck } from "./auth-check"
 import Script from "next/script"
 import { Inter } from "next/font/google"
 import "./globals.css" 
+import { Providers } from "./providers"
+
 const inter = Inter({ subsets: ["latin"] })
 
 export default function RootLayout({
@@ -23,8 +24,9 @@ export default function RootLayout({
         />
       </head>
       <body className={inter.className}>
-        <AuthCheck />
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )

@@ -1,3 +1,4 @@
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
     return [
@@ -39,7 +40,7 @@ const nextConfig = {
         source: "/api/:path*",
         headers: [
           { key: "Access-Control-Allow-Credentials", value: "true" },
-          { key: "Access-Control-Allow-Origin", value: "*" }, // In production, replace with specific domains
+          { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET,DELETE,PATCH,POST,PUT,OPTIONS" },
           {
             key: "Access-Control-Allow-Headers",
@@ -50,36 +51,8 @@ const nextConfig = {
       },
     ]
   },
-  reactStrictMode: true,
   images: {
     domains: ["images.unsplash.com"],
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
-        port: "",
-        pathname: "/**",
-      },
-    ],
-  },
-  experimental: {
-    optimizeCss: false,
-    serverActions: {
-      allowedOrigins: ['localhost:3000', 'datethinker.com'],
-    },
-  },
-  outputFileTracingExcludes: {
-    '*': [
-      '**/@swc/**',
-      '**/@esbuild/**',
-      '**/node_modules/**',
-    ],
-  },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization.moduleIds = 'deterministic';
-    }
-    return config;
   },
 }
 
