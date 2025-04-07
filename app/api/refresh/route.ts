@@ -4,36 +4,40 @@ import { refreshPlace } from "@/lib/search-utils"
 export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
-  console.log("Refresh API called")
-  
+  console.log("[Refresh API] Called with method:", request.method)
+  console.log("[Refresh API] Headers:", Object.fromEntries(request.headers))
+
   try {
     const body = await request.json()
-    console.log("Refresh request body:", body)
-    const { type, city, placeId, priceRange } = body
+    console.log("[Refresh API] Request body:", body)
 
-    if (!type || !city) {
-      console.log("Missing required parameters")
+    if (!body.type || !body.city) {
+      console.log("[Refresh API] Missing required parameters")
       return NextResponse.json(
-        { error: "Missing required parameters" },
+        { error: "Type and city are required" },
         { status: 400 }
       )
     }
 
-    console.log("Calling refreshPlace with:", { type, city, placeId, priceRange })
-    const result = await refreshPlace(type, city, placeId, priceRange)
-    console.log("Refresh result:", result)
-    
+    const result = await refreshPlace(
+      body.type,
+      body.city,
+      body.placeId,
+      body.priceRange
+    )
+    console.log("[Refresh API] Refresh result:", result)
+
     return NextResponse.json(result)
   } catch (error) {
-    console.error("Error in refresh API:", error)
+    console.error("[Refresh API] Error:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to refresh place" },
+      { error: "Internal server error" },
       { status: 500 }
     )
   }
 }
 
 export async function OPTIONS(request: Request) {
-  console.log("OPTIONS request received")
-  return NextResponse.json({}, { status: 200 })
+  console.log("[Refresh API] OPTIONS request received")
+  return new NextResponse(null, { status: 200 })
 } 
