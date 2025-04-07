@@ -3,6 +3,12 @@ import { refreshPlace } from "@/lib/search-utils"
 
 export const runtime = 'nodejs'
 
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+}
+
 export async function POST(request: Request) {
   console.log("[Refresh API] Called with method:", request.method)
   console.log("[Refresh API] Headers:", Object.fromEntries(request.headers))

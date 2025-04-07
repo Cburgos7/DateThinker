@@ -134,36 +134,25 @@ export default function Page() {
     if (error) setError(null)
   }
 
-  // Update the handleSearch function to handle errors better
-  const handleSearch = async (e?: React.FormEvent, customFilters?: any, customPriceRange?: number) => {
+  const handleSearch = async (e?: React.FormEvent, searchFilters = filters, searchPriceRange = priceRange) => {
     if (e) {
       e.preventDefault()
     }
 
-    if (!city) {
+    // Check if city is entered
+    if (!city.trim()) {
       setError("Please enter a city")
       return
     }
 
-    setError(null)
     setIsLoading(true)
-    setResults({})
-
-    const searchFilters = customFilters || filters
-    const searchPriceRange = customPriceRange !== undefined ? customPriceRange : priceRange
-
-    if (customFilters) {
-      setFilters(customFilters)
-    }
-    if (customPriceRange !== undefined) {
-      setPriceRange(customPriceRange)
-    }
+    setError(null)
 
     try {
       console.log("Searching with filters:", searchFilters)
 
-      // Use the new API route
-      const response = await fetch("/api/search", {
+      // Try the App Router API route first
+      let response = await fetch("/api/search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -174,6 +163,22 @@ export default function Page() {
           priceRange: searchPriceRange,
         }),
       })
+
+      // If the App Router API route fails, try the legacy API route
+      if (!response.ok) {
+        console.log("App Router API route failed, trying legacy API route")
+        response = await fetch("/api/search-legacy", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            city,
+            filters: searchFilters,
+            priceRange: searchPriceRange,
+          }),
+        })
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
@@ -215,8 +220,8 @@ export default function Page() {
 
     try {
       if (results[type]) {
-        // Use the new API route
-        const response = await fetch("/api/refresh", {
+        // Try the App Router API route first
+        let response = await fetch("/api/refresh", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -228,6 +233,23 @@ export default function Page() {
             priceRange,
           }),
         })
+
+        // If the App Router API route fails, try the legacy API route
+        if (!response.ok) {
+          console.log("App Router API route failed, trying legacy API route")
+          response = await fetch("/api/refresh-legacy", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: results[type]!.category,
+              city,
+              placeId: results[type]!.placeId,
+              priceRange,
+            }),
+          })
+        }
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
