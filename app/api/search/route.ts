@@ -9,12 +9,14 @@ export async function POST(request: Request) {
     console.log("Search request body:", body)
 
     if (!body.city) {
+      console.log("City is required")
       return NextResponse.json(
         { error: "City is required" },
         { status: 400 }
       )
     }
 
+    console.log("Calling searchPlaces with:", body)
     const results = await searchPlaces(body)
     console.log("Search results:", results)
     
@@ -29,5 +31,6 @@ export async function POST(request: Request) {
 }
 
 export async function OPTIONS(request: Request) {
+  console.log("OPTIONS request received")
   return NextResponse.json({}, { status: 200 })
 } 
