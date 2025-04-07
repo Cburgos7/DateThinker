@@ -16,24 +16,48 @@ import { Textarea } from "@/components/ui/textarea"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Calendar } from "@/components/ui/calendar"
-import { format } from "date-fns"
+import { Calendar } from "@/components/ui/calendar-custom"
+import { format, addMinutes, setMinutes, setHours, isAfter } from "date-fns"
 import { CalendarIcon, Clock } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { saveDateSet } from "@/app/actions/date-sets"
+import { saveDateSetAction } from "@/app/actions/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+// Helper function to generate all time slots for a 24-hour period
+const generateAllTimeSlots = () => {
+  const slots: string[] = []
+  let currentTime = new Date()
+  
+  // Set to midnight (12:00 AM)
+  currentTime = setHours(currentTime, 0)
+  currentTime = setMinutes(currentTime, 0)
+  
+  // Generate slots for the full 24 hours (96 slots - 24 hours * 4 intervals)
+  for (let i = 0; i < 96; i++) {
+    slots.push(format(currentTime, 'h:mm a'))
+    currentTime = addMinutes(currentTime, 15)
+  }
+  
+  return slots
+}
 
 const formSchema = z.object({
   title: z.string().min(1, "Please enter a title"),
   date: z.date({
     required_error: "Please select a date",
   }),
-  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Please enter a valid time (HH:MM)"),
-  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Please enter a valid time (HH:MM)"),
+  startTime: z.string().min(1, "Please select a start time"),
+  endTime: z.string().min(1, "Please select an end time"),
   notes: z.string().optional(),
+  sharePreferences: z.object({
+    email: z.boolean().default(true),
+    sms: z.boolean().default(true),
+    link: z.boolean().default(true),
+  }).default({ email: true, sms: true, link: true }),
 })
 
 interface SaveDateModalProps {
@@ -55,21 +79,34 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
       startTime: "18:00",
       endTime: "22:00",
       notes: "",
+      sharePreferences: {
+        email: true,
+        sms: true,
+        link: true
+      }
     },
   })
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsSubmitting(true)
-    setErrorMessage(null)
+    setErrorMessage("")
 
     try {
-      // Log the form values for debugging
-      console.log("Submitting form with values:", values)
+      // Format the date to YYYY-MM-DD
+      const dateObj = new Date(values.date)
+      const formattedDate = dateObj.toISOString().split('T')[0]
+
+      console.log("Submitting form with values:", {
+        title: values.title,
+        date: values.date,
+        startTime: values.startTime,
+        endTime: values.endTime,
+        notes: values.notes,
+        places: places.length
+      })
       console.log("Places to save:", places)
 
-      const formattedDate = format(values.date, "yyyy-MM-dd")
-
-      const result = await saveDateSet(
+      const result = await saveDateSetAction(
         values.title,
         formattedDate,
         values.startTime,
@@ -93,9 +130,19 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
         description: "Your date plan has been saved and is ready to share or add to your calendar.",
       })
 
-      // Navigate to the date plans page
-      router.push(`/date-plans/${result.dateSetId}`)
+      // Close the modal first
       onClose()
+      
+      // Then navigate to the date plans page
+      // Use a small timeout to ensure the modal is closed before navigation
+      setTimeout(() => {
+        if (result.dateSetId) {
+          router.push(`/date-plans/${result.dateSetId}`)
+        } else {
+          // If no specific ID, go to the main date plans page
+          router.push('/date-plans')
+        }
+      }, 100)
     } catch (error) {
       console.error("Error saving date set:", error)
       const errorMsg = error instanceof Error ? error.message : "An unexpected error occurred. Please try again."
@@ -149,25 +196,26 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
                     <FormLabel>Date</FormLabel>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            type="button" // Add this line to explicitly set the button type
-                            variant={"outline"}
-                            className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
-                            onClick={(e) => e.preventDefault()} // Add this to prevent any form submission
-                          >
-                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full pl-3 text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                           mode="single"
                           selected={field.value}
                           onSelect={field.onChange}
+                          disabled={(date) =>
+                            date < new Date(new Date().setHours(0, 0, 0, 0))
+                          }
                           initialFocus
-                          disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                         />
                       </PopoverContent>
                     </Popover>
@@ -176,19 +224,28 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
                 )}
               />
 
-              <div className="flex gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="startTime"
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormLabel>Start Time</FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Input placeholder="18:00" {...field} />
-                        </FormControl>
-                        <Clock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select start time" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px] overflow-y-auto">
+                          {generateAllTimeSlots().map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {time}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -200,12 +257,21 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormLabel>End Time</FormLabel>
-                      <div className="relative">
-                        <FormControl>
-                          <Input placeholder="22:00" {...field} />
-                        </FormControl>
-                        <Clock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select end time" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px] overflow-y-auto">
+                          {generateAllTimeSlots().map((time) => (
+                            <SelectItem key={time} value={time}>
+                              {time}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -230,6 +296,48 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
                     These notes will be included when you share the plan or add it to your calendar.
                   </FormDescription>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="sharePreferences"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sharing Options</FormLabel>
+                  <div className="flex flex-col space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={field.value.email}
+                        onChange={(e) => field.onChange({ ...field.value, email: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <label>Share via Email</label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={field.value.sms}
+                        onChange={(e) => field.onChange({ ...field.value, sms: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <label>Share via SMS</label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={field.value.link}
+                        onChange={(e) => field.onChange({ ...field.value, link: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <label>Share via Link</label>
+                    </div>
+                  </div>
+                  <FormDescription>
+                    Choose how you'd like to share this date plan with others.
+                  </FormDescription>
                 </FormItem>
               )}
             />

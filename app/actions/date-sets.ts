@@ -1,6 +1,7 @@
 "use server"
 
-import { getCurrentUser } from "@/lib/supabase"
+import { createServerActionClient } from "@supabase/auth-helpers-nextjs"
+import { cookies } from "next/headers"
 import {
   createDateSet,
   getUserDateSets,
@@ -12,76 +13,133 @@ import {
   type DateSet,
 } from "@/lib/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
+import { storeMockDateSet } from "@/app/actions/date-plans"
+import { getCurrentUser } from '@/lib/supabase'
 
-export async function saveDateSet(
+// Check if we're in development mode
+const isDevelopment = process.env.NODE_ENV === 'development'
+
+export async function saveDateSetAction(
   title: string,
   date: string,
   startTime: string,
   endTime: string,
   places: PlaceResult[],
-  notes?: string,
-): Promise<{ success: boolean; dateSetId?: string; error?: string }> {
+  notes?: string
+) {
   try {
+    // Get the current user session
     const user = await getCurrentUser()
-
-    if (!user) {
-      return { success: false, error: "You must be logged in to save a date set" }
+    
+    // In development mode, use a test user ID if no session is found
+    const userId = user?.id || (process.env.NODE_ENV === 'development' ? "test-user-id" : null)
+    
+    if (!userId) {
+      return { success: false, error: "User not authenticated" }
     }
-
-    console.log("Saving date set for user:", user.id, "with places:", places.length)
-
-    // Validate input data
-    if (!title) return { success: false, error: "Title is required" }
-    if (!date) return { success: false, error: "Date is required" }
-    if (!startTime) return { success: false, error: "Start time is required" }
-    if (!endTime) return { success: false, error: "End time is required" }
-    if (!places || places.length === 0) return { success: false, error: "At least one place is required" }
-
-    const dateSetId = await createDateSet(user.id, title, date, startTime, endTime, places, notes)
-
+    
+    // Create the date set
+    const dateSetId = await createDateSet(
+      userId,
+      title,
+      date,
+      startTime,
+      endTime,
+      places,
+      notes
+    )
+    
     if (!dateSetId) {
-      return { success: false, error: "Failed to create date set. Please try again." }
+      return { success: false, error: "Failed to create date set" }
     }
-
+    
+    // In development mode, store the mock date set for later retrieval
+    if (process.env.NODE_ENV === 'development' && userId === "test-user-id") {
+      const mockDateSet: DateSet = {
+        id: dateSetId,
+        title,
+        date,
+        start_time: startTime,
+        end_time: endTime,
+        places,
+        share_id: `mock-share-${Date.now()}`,
+        notes: notes || null,
+        created_at: new Date().toISOString(),
+        user_id: userId
+      };
+      
+      await storeMockDateSet(mockDateSet);
+    }
+    
     return { success: true, dateSetId }
   } catch (error) {
     console.error("Error saving date set:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "An unexpected error occurred",
-    }
+    return { success: false, error: "Failed to save date set" }
   }
 }
 
-export async function getUserDateSetsAction(): Promise<{ success: boolean; dateSets?: DateSet[]; error?: string }> {
+export async function getUserDateSetsAction() {
   try {
+    // Get the current user session
     const user = await getCurrentUser()
-
-    if (!user) {
-      return { success: false, error: "You must be logged in to view your date sets" }
+    
+    // In development mode, use a test user ID if no session is found
+    const userId = user?.id || (process.env.NODE_ENV === 'development' ? "test-user-id" : null)
+    
+    if (!userId) {
+      return { success: false, error: "User not authenticated" }
     }
-
-    const dateSets = await getUserDateSets(user.id)
+    
+    // Get the user's date sets
+    const dateSets = await getUserDateSets(userId)
+    
     return { success: true, dateSets }
   } catch (error) {
-    console.error("Error getting date sets:", error)
-    return { success: false, error: "Failed to retrieve date sets" }
+    console.error("Error getting user date sets:", error)
+    return { success: false, error: "Failed to get date sets" }
   }
 }
 
 export async function deleteDateSetAction(dateSetId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const user = await getCurrentUser()
-
-    if (!user) {
-      return { success: false, error: "You must be logged in to delete a date set" }
+    // Create a server action client
+    const cookieStore = cookies()
+    const supabase = createServerActionClient({ cookies: () => cookieStore })
+    
+    // Get the current user
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    // In development mode, if no session is found, use a default user ID
+    // This is only for testing purposes and should not be used in production
+    let userId: string;
+    
+    if (!session) {
+      if (isDevelopment) {
+        console.log("Development mode: Using default user ID for testing");
+        // Use a default user ID for testing in development
+        userId = "test-user-id";
+      } else {
+        return { success: false, error: "You must be logged in to delete a date set" }
+      }
+    } else {
+      userId = session.user.id;
     }
 
-    const success = await deleteDateSet(dateSetId, user.id)
-    return { success, error: success ? undefined : "Failed to delete date set" }
+    // Verify the date set belongs to the user
+    const dateSet = await getDateSetById(dateSetId)
+    if (!dateSet) {
+      return { success: false, error: "Date set not found" }
+    }
+
+    if (dateSet.user_id !== userId) {
+      return { success: false, error: "You don't have permission to delete this date set" }
+    }
+
+    await deleteDateSet(dateSetId, userId)
+    return { success: true }
   } catch (error) {
     console.error("Error deleting date set:", error)
-    return { success: false, error: "An unexpected error occurred" }
+    return { success: false, error: "Failed to delete date set" }
   }
 }
 
@@ -123,11 +181,18 @@ export async function generateCalendarFileAction(
   dateSetId: string,
 ): Promise<{ success: boolean; icalContent?: string; error?: string }> {
   try {
-    const user = await getCurrentUser()
-
-    if (!user) {
+    // Create a server action client
+    const cookieStore = cookies()
+    const supabase = createServerActionClient({ cookies: () => cookieStore })
+    
+    // Get the current user
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) {
       return { success: false, error: "You must be logged in to export a calendar" }
     }
+    
+    const userId = session.user.id
 
     const dateSet = await getDateSetById(dateSetId)
 
@@ -136,7 +201,7 @@ export async function generateCalendarFileAction(
     }
 
     // Verify ownership
-    if (dateSet.user_id !== user.id) {
+    if (dateSet.user_id !== userId) {
       return { success: false, error: "You don't have permission to export this date set" }
     }
 
@@ -163,6 +228,55 @@ export async function getGoogleCalendarLinkAction(
   } catch (error) {
     console.error("Error generating Google Calendar link:", error)
     return { success: false, error: "Failed to generate Google Calendar link" }
+  }
+}
+
+/**
+ * Update an existing date set
+ */
+export async function updateDateSetAction(
+  id: string,
+  title: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  places: PlaceResult[],
+  notes?: string
+) {
+  try {
+    // Get the current user session
+    const user = await getCurrentUser()
+    
+    // In development mode, use a test user ID if no session is found
+    const userId = user?.id || (process.env.NODE_ENV === 'development' ? "test-user-id" : null)
+    
+    if (!userId) {
+      return { success: false, error: "User not authenticated" }
+    }
+    
+    // Update the date set
+    const success = await updateDateSet(id, userId, title, date, startTime, endTime, places, notes)
+    
+    if (!success) {
+      return { success: false, error: "Failed to update date set" }
+    }
+    
+    // Get the updated date set
+    const dateSet = await getDateSetById(id)
+    
+    if (!dateSet) {
+      return { success: false, error: "Failed to retrieve updated date set" }
+    }
+    
+    // In development mode, update the mock date set
+    if (process.env.NODE_ENV === 'development' && userId === "test-user-id") {
+      await storeMockDateSet(dateSet);
+    }
+    
+    return { success: true, dateSet }
+  } catch (error) {
+    console.error("Error updating date set:", error)
+    return { success: false, error: "Failed to update date set" }
   }
 }
 
