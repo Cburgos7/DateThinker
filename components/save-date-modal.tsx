@@ -22,7 +22,7 @@ import { CalendarIcon, Clock } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 import { saveDateSet } from "@/app/actions/date-sets"
-import type { PlaceResult } from "@/app/actions"
+import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 

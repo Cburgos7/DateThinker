@@ -11,7 +11,7 @@ import {
   generateGoogleCalendarLink,
   type DateSet,
 } from "@/lib/date-sets"
-import type { PlaceResult } from "@/app/actions"
+import type { PlaceResult } from "@/lib/search-utils"
 
 export async function saveDateSet(
   title: string,

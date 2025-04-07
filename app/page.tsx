@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Toggle } from "@/components/ui/toggle"
 import { cn } from "@/lib/utils"
-import { searchPlaces, refreshPlace, type PlaceResult, type SearchResults } from "./actions"
+import { type PlaceResult, type SearchResults, refreshPlace } from "@/lib/search-utils"
 import { AdBanner } from "@/components/ads/ad-banner"
 import { Footer } from "@/components/footer"
 import { Header } from "@/components/header"
@@ -140,22 +140,18 @@ export default function Page() {
       e.preventDefault()
     }
 
-    if (!city.trim()) {
+    if (!city) {
       setError("Please enter a city")
       return
     }
 
-    // Add after the e.preventDefault() check
-    setResults({})
-
     setError(null)
     setIsLoading(true)
+    setResults({})
 
-    // Use custom filters and price range if provided, otherwise use state
     const searchFilters = customFilters || filters
     const searchPriceRange = customPriceRange !== undefined ? customPriceRange : priceRange
 
-    // Update UI to reflect the filters being used for search
     if (customFilters) {
       setFilters(customFilters)
     }
@@ -166,23 +162,35 @@ export default function Page() {
     try {
       console.log("Searching with filters:", searchFilters)
 
-      const searchResults = await searchPlaces({
-        city,
-        placeId,
-        filters: searchFilters,
-        priceRange: searchPriceRange,
+      // Use the new API route
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          city,
+          filters: searchFilters,
+          priceRange: searchPriceRange,
+        }),
       })
 
-      console.log("Search results:", searchResults)
-
-      if (Object.keys(searchResults).length === 0) {
-        setError("No results found. Try different filters or another city.")
-        return
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
-      setResults(searchResults)
+      const data = await response.json()
+      console.log("Search response:", data)
 
-      // Trigger confetti if we have results using dynamic import
+      if (!data || Object.keys(data).length === 0) {
+        throw new Error("No results found")
+      }
+
+      setResults(data)
+      setError(null)
+
+      // Trigger confetti if we have results
       import('canvas-confetti').then((confettiModule) => {
         const confetti = confettiModule.default;
         confetti({
@@ -191,34 +199,49 @@ export default function Page() {
           origin: { y: 0.6 },
         });
       });
-    } catch (err: any) {
-      console.error("Search error:", err)
-      setError(err.message || "Failed to find date ideas. Please try again.")
+    } catch (error) {
+      console.error("Search error:", error)
+      setError(error instanceof Error ? error.message : "Failed to search places")
+      setResults({})
     } finally {
       setIsLoading(false)
     }
   }
 
   // Update the handleRefresh function to handle errors better
-  const handleRefresh = async (category: keyof SearchResults) => {
-    setRefreshing((prev) => ({ ...prev, [category]: true }))
+  const handleRefresh = async (type: "restaurant" | "activity" | "drink" | "outdoor") => {
+    setRefreshing((prev) => ({ ...prev, [type]: true }))
     setError(null)
 
     try {
-      if (results[category]) {
-        const refreshedPlace = await refreshPlace(
-          results[category]!.category,
-          city,
-          results[category]!.placeId,
-          priceRange,
-        )
-        setResults((prevResults) => ({ ...prevResults, [category]: refreshedPlace }))
+      if (results[type]) {
+        // Use the new API route
+        const response = await fetch("/api/refresh", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: results[type]!.category,
+            city,
+            placeId: results[type]!.placeId,
+            priceRange,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+        }
+
+        const refreshedPlace = await response.json()
+        setResults((prevResults) => ({ ...prevResults, [type]: refreshedPlace }))
       }
     } catch (error: any) {
-      console.error(`Failed to refresh ${category}:`, error)
-      setError(`Couldn't find another ${category}. Try a different city or filter.`)
+      console.error(`Failed to refresh ${type}:`, error)
+      setError(`Couldn't find another ${type}. Try a different city or filter.`)
     } finally {
-      setRefreshing((prev) => ({ ...prev, [category]: false }))
+      setRefreshing((prev) => ({ ...prev, [type]: false }))
     }
   }
 
