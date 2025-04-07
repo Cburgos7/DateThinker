@@ -162,6 +162,7 @@ export default function Page() {
     try {
       console.log("Searching with filters:", searchFilters)
 
+      // Use the new API route
       const response = await fetch("/api/search", {
         method: "POST",
         headers: {
@@ -214,12 +215,26 @@ export default function Page() {
 
     try {
       if (results[type]) {
-        const refreshedPlace = await refreshPlace(
-          results[type]!.category,
-          city,
-          results[type]!.placeId,
-          priceRange,
-        )
+        // Use the new API route
+        const response = await fetch("/api/refresh", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: results[type]!.category,
+            city,
+            placeId: results[type]!.placeId,
+            priceRange,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+        }
+
+        const refreshedPlace = await response.json()
         setResults((prevResults) => ({ ...prevResults, [type]: refreshedPlace }))
       }
     } catch (error: any) {
