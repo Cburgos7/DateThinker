@@ -26,10 +26,11 @@ import { type PlaceResult, type SearchResults, refreshPlace } from "@/lib/search
 import { AdBanner } from "@/components/ads/ad-banner"
 import { Footer } from "@/components/footer"
 import { Header } from "@/components/header"
-import { CityAutocomplete } from "@/components/city-autocomplete"
+import { Input } from "@/components/ui/input"
 import { getCurrentUser } from "@/lib/supabase"
 import { checkIsFavorite, toggleFavorite } from "@/app/actions/favorites"
 import { SaveDateModal } from "@/components/save-date-modal"
+import Image from "next/image"
 
 export default function Page() {
   const router = useRouter()
@@ -362,9 +363,10 @@ export default function Page() {
 
             <form onSubmit={handleSearch} className="space-y-6 md:space-y-8">
               <div className="relative group">
-                <CityAutocomplete
+                <Input
+                  type="text"
                   value={city}
-                  onChange={handleCityChange}
+                  onChange={(e) => handleCityChange(e.target.value)}
                   placeholder="Enter your city..."
                   className="pl-10 h-12 text-lg transition-all border-2 group-hover:border-rose-300"
                   required
@@ -588,9 +590,11 @@ function ResultCard({
     >
       {result.photoUrl && (
         <div className="h-40 w-full overflow-hidden">
-          <img
+          <Image
             src={result.photoUrl || "/placeholder.svg"}
             alt={result.name}
+            width={500}
+            height={300}
             className="w-full h-full object-cover transition-transform group-hover:scale-105"
             crossOrigin="anonymous"
           />

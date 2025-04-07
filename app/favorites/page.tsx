@@ -7,34 +7,70 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { MapPin, Star, Trash2 } from "lucide-react"
 import { removeFromFavoritesAction } from "@/app/actions/favorites"
+import { useEffect, useState } from "react"
 
-export default async function FavoritesPage() {
-  const user = await getCurrentUser()
+export default function FavoritesPage() {
+  const [user, setUser] = useState<any>(null)
+  const [favorites, setFavorites] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const currentUser = await getCurrentUser()
+        if (!currentUser) {
+          redirect("/login?redirect=/favorites")
+        }
+        setUser(currentUser)
+        
+        if (currentUser.subscription_status === "premium" || currentUser.subscription_status === "lifetime") {
+          const userFavorites = await getUserFavorites(currentUser.id)
+          setFavorites(userFavorites)
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        redirect("/login?redirect=/favorites")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  if (isLoading) {
+    return <div>Loading...</div>
+  }
 
   if (!user) {
-    redirect("/login?redirect=/favorites")
+    return null
   }
+
   // Check if user has premium access
   if (user.subscription_status !== "premium" && user.subscription_status !== "lifetime") {
     return (
       <div className="container mx-auto px-4 py-16">
-        <div className="max-w-3xl mx-auto text-center">
-          <h1 className="text-3xl font-bold mb-4">Premium Feature</h1>
-          <p className="text-muted-foreground mb-8">
-            Saving favorites is a premium feature. Upgrade to access this and other premium features.
-          </p>
-          <Button
-            className="bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
-            onClick={() => redirect("/pricing")}
-          >
-            Upgrade to Premium
-          </Button>
+        <div className="max-w-3xl mx-auto">
+          <Card>
+            <CardHeader>
+              <CardTitle>Premium Feature</CardTitle>
+              <CardDescription>
+                Favorites are only available for premium subscribers.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4">
+                Upgrade your account to save your favorite places and access them anytime.
+              </p>
+              <Button asChild>
+                <a href="/account">Upgrade Now</a>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
   }
-
-  const favorites = await getUserFavorites(user.id)
 
   return (
     <div className="container mx-auto px-4 py-16">

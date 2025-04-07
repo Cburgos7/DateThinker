@@ -2,11 +2,7 @@ import { NextResponse } from "next/server"
 
 export const runtime = 'nodejs'
 
-export const config = {
-  api: {
-    bodyParser: true,
-  },
-}
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   console.log("[Test API] GET request received")

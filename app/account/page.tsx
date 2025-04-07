@@ -14,7 +14,7 @@ export default function AccountPage() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const searchParams = useSearchParams()
-  const success = searchParams.get("success")
+  const success = searchParams?.get("success")
 
   useEffect(() => {
     async function fetchUser() {
@@ -48,11 +48,7 @@ export default function AccountPage() {
         {success && (
           <div className="mb-8 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center">
             <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
-            <p className="text-green-700">
-              {success === "subscription"
-                ? "Your subscription was successfully activated!"
-                : "Your lifetime membership was successfully activated!"}
-            </p>
+            <span>Your subscription has been updated successfully!</span>
           </div>
         )}
 

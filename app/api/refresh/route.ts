@@ -2,12 +2,7 @@ import { NextResponse } from "next/server"
 import { refreshPlace } from "@/lib/search-utils"
 
 export const runtime = 'nodejs'
-
-export const config = {
-  api: {
-    bodyParser: true,
-  },
-}
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   console.log("[Refresh API] Called with method:", request.method)
@@ -46,4 +41,4 @@ export async function POST(request: Request) {
 export async function OPTIONS(request: Request) {
   console.log("[Refresh API] OPTIONS request received")
   return new NextResponse(null, { status: 200 })
-} 
+}

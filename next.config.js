@@ -1,3 +1,4 @@
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
     return [
@@ -50,32 +51,8 @@ const nextConfig = {
       },
     ]
   },
-  reactStrictMode: true,
   images: {
     domains: ["images.unsplash.com"],
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "images.unsplash.com",
-        port: "",
-      },
-    ],
-  },
-  experimental: {
-    appDir: true,
-  },
-  outputFileTracingExcludes: {
-    '*': [
-      '**/@swc/**',
-      '**/@esbuild/**',
-      '**/node_modules/**',
-    ],
-  },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.optimization.moduleIds = 'deterministic';
-    }
-    return config;
   },
 }
 
