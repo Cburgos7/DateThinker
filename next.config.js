@@ -39,7 +39,7 @@ const nextConfig = {
         source: "/api/:path*",
         headers: [
           { key: "Access-Control-Allow-Credentials", value: "true" },
-          { key: "Access-Control-Allow-Origin", value: "*" }, // In production, replace with specific domains
+          { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET,DELETE,PATCH,POST,PUT,OPTIONS" },
           {
             key: "Access-Control-Allow-Headers",
@@ -58,15 +58,11 @@ const nextConfig = {
         protocol: "https",
         hostname: "images.unsplash.com",
         port: "",
-        pathname: "/**",
       },
     ],
   },
   experimental: {
-    optimizeCss: false,
-    serverActions: {
-      allowedOrigins: ['localhost:3000', 'datethinker.com'],
-    },
+    appDir: true,
   },
   outputFileTracingExcludes: {
     '*': [
