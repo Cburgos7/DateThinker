@@ -140,22 +140,18 @@ export default function Page() {
       e.preventDefault()
     }
 
-    if (!city.trim()) {
+    if (!city) {
       setError("Please enter a city")
       return
     }
 
-    // Add after the e.preventDefault() check
-    setResults({})
-
     setError(null)
     setIsLoading(true)
+    setResults({})
 
-    // Use custom filters and price range if provided, otherwise use state
     const searchFilters = customFilters || filters
     const searchPriceRange = customPriceRange !== undefined ? customPriceRange : priceRange
 
-    // Update UI to reflect the filters being used for search
     if (customFilters) {
       setFilters(customFilters)
     }
@@ -179,14 +175,21 @@ export default function Page() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to search places")
+        const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
-      setResults(data)
+      console.log("Search response:", data)
 
-      // Trigger confetti if we have results using dynamic import
+      if (!data || Object.keys(data).length === 0) {
+        throw new Error("No results found")
+      }
+
+      setResults(data)
+      setError(null)
+
+      // Trigger confetti if we have results
       import('canvas-confetti').then((confettiModule) => {
         const confetti = confettiModule.default;
         confetti({
@@ -195,9 +198,10 @@ export default function Page() {
           origin: { y: 0.6 },
         });
       });
-    } catch (err: any) {
-      console.error("Search error:", err)
-      setError(err.message || "Failed to find date ideas. Please try again.")
+    } catch (error) {
+      console.error("Search error:", error)
+      setError(error instanceof Error ? error.message : "Failed to search places")
+      setResults({})
     } finally {
       setIsLoading(false)
     }
