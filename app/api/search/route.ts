@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { searchPlaces } from "@/lib/search-utils"
 
+export const runtime = 'nodejs'
+
 export async function POST(request: Request) {
   console.log("Search API called")
   

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { refreshPlace } from "@/lib/search-utils"
 
+export const runtime = 'nodejs'
+
 export async function POST(request: Request) {
   console.log("Refresh API called")
   
