@@ -15,6 +15,7 @@ import {
 import type { PlaceResult } from "@/lib/search-utils"
 import { storeMockDateSet } from "@/app/actions/date-plans"
 import { getCurrentUser } from '@/lib/supabase'
+import { v4 as uuidv4 } from 'uuid'
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -28,53 +29,75 @@ export async function saveDateSetAction(
   notes?: string
 ) {
   try {
-    // Get the current user session
-    const user = await getCurrentUser()
+    console.log("Starting saveDateSetAction");
     
-    // In development mode, use a test user ID if no session is found
-    const userId = user?.id || (process.env.NODE_ENV === 'development' ? "test-user-id" : null)
+    // Create a server action client
+    const cookieStore = cookies()
+    const supabase = createServerActionClient({ cookies: () => cookieStore })
     
+    // In development mode, use our test UUID, otherwise get the authenticated user's ID
+    const userId = process.env.NODE_ENV === 'development'
+      ? 'a17c9b47-b462-4d96-8519-90b7601e76ec'
+      : (await supabase.auth.getSession()).data.session?.user?.id;
+
     if (!userId) {
+      console.error("No user ID available");
       return { success: false, error: "User not authenticated" }
     }
+
+    console.log("Using user ID:", userId);
     
-    // Create the date set
-    const dateSetId = await createDateSet(
-      userId,
+    // Generate a unique ID for the date set
+    const id = uuidv4();
+
+    // Prepare data for insert
+    const dataToInsert = {
+      id,  // Include the generated ID
+      user_id: userId,
       title,
       date,
-      startTime,
-      endTime,
+      start_time: startTime,
+      end_time: endTime,
       places,
-      notes
-    )
-    
-    if (!dateSetId) {
-      return { success: false, error: "Failed to create date set" }
+      share_id: `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      notes: notes || null,
     }
     
-    // In development mode, store the mock date set for later retrieval
-    if (process.env.NODE_ENV === 'development' && userId === "test-user-id") {
-      const mockDateSet: DateSet = {
-        id: dateSetId,
-        title,
-        date,
-        start_time: startTime,
-        end_time: endTime,
-        places,
-        share_id: `mock-share-${Date.now()}`,
-        notes: notes || null,
-        created_at: new Date().toISOString(),
-        user_id: userId
-      };
-      
-      await storeMockDateSet(mockDateSet);
-    }
+    // Log the insert attempt
+    console.log("Attempting to insert date set with data:", {
+      id,
+      user_id: userId,
+      title,
+      date,
+      places_count: places.length
+    });
+
+    // Insert the data
+    const { data, error } = await supabase
+      .from('date_sets')
+      .insert(dataToInsert)
+      .select()
+      .single()
     
-    return { success: true, dateSetId }
+    if (error) {
+      console.error("Failed to create date set:", {
+        error: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      return { success: false, error: `Failed to create date set: ${error.message}` }
+    }
+
+    console.log("Successfully created date set with ID:", data.id);
+    return { success: true, dateSetId: data.id }
+    
   } catch (error) {
-    console.error("Error saving date set:", error)
-    return { success: false, error: "Failed to save date set" }
+    console.error("Error in saveDateSetAction:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Failed to save date set" 
+    }
   }
 }
 
@@ -83,15 +106,19 @@ export async function getUserDateSetsAction() {
     // Get the current user session
     const user = await getCurrentUser()
     
-    // In development mode, use a test user ID if no session is found
-    const userId = user?.id || (process.env.NODE_ENV === 'development' ? "test-user-id" : null)
+    // Use the actual user ID if available, otherwise use the specific UUID in development
+    const userId = user?.id || (process.env.NODE_ENV === 'development' ? "a17c9b47-b462-4d96-8519-90b7601e76ec" : null)
     
     if (!userId) {
       return { success: false, error: "User not authenticated" }
     }
     
+    console.log("Getting date sets for user ID:", userId)
+    
     // Get the user's date sets
     const dateSets = await getUserDateSets(userId)
+    
+    console.log("Retrieved date sets:", dateSets.length)
     
     return { success: true, dateSets }
   } catch (error) {
