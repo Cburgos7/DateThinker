@@ -42,14 +42,28 @@ export async function saveDateSetAction(
     const cookieStore = cookies()
     const supabase = createServerActionClient({ cookies: () => cookieStore })
     
-    // In development mode, use our test UUID, otherwise get the authenticated user's ID
-    const userId = process.env.NODE_ENV === 'development'
-      ? 'a17c9b47-b462-4d96-8519-90b7601e76ec'
-      : (await supabase.auth.getSession()).data.session?.user?.id;
+    // Get the session with additional debugging
+    const sessionResponse = await supabase.auth.getSession()
+    console.log("Auth session response:", {
+      hasSession: !!sessionResponse.data.session,
+      error: sessionResponse.error ? sessionResponse.error.message : null
+    });
+    
+    // Get user ID with fallback for development
+    let userId = sessionResponse.data.session?.user?.id;
+    
+    // Debug cookie information
+    console.log("Cookie store available:", !!cookieStore);
+    
+    // In development mode, use a test ID if no session
+    if (!userId && process.env.NODE_ENV === 'development') {
+      console.log("Development mode: Using test user ID");
+      userId = 'a17c9b47-b462-4d96-8519-90b7601e76ec';
+    }
 
     if (!userId) {
       console.error("No user ID available");
-      return { success: false, error: "User not authenticated" }
+      return { success: false, error: "User not authenticated. Please try signing out completely and signing back in." }
     }
 
     console.log("Using user ID:", userId);

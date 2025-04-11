@@ -25,6 +25,8 @@ import { saveDateSetAction } from "@/app/actions/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
+import { refreshSession } from "@/lib/supabase"
+import { useAuth } from "@/app/auth-context"
 
 const formSchema = z.object({
   title: z.string().min(1, "Please enter a title"),
@@ -46,6 +48,7 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const router = useRouter()
+  const { refreshAuth } = useAuth()
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,6 +66,9 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
     setErrorMessage("")
 
     try {
+      // Try to refresh the auth session before submitting
+      await refreshAuth()
+      
       // Format the date to YYYY-MM-DD
       const dateObj = new Date(values.date)
       const formattedDate = dateObj.toISOString().split('T')[0]

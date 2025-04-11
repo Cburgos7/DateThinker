@@ -275,3 +275,32 @@ export function checkSupabaseEnvVars(): {
   }
 }
 
+// Export an explicit function to refresh the session
+export async function refreshSession() {
+  try {
+    if (!supabase) {
+      console.error("Cannot refresh session - Supabase client not initialized");
+      return false;
+    }
+    
+    console.log("Attempting to refresh Supabase session...");
+    const { data, error } = await supabase.auth.refreshSession();
+    
+    if (error) {
+      console.error("Failed to refresh session:", error);
+      return false;
+    }
+    
+    if (data.session) {
+      console.log("Session refreshed successfully");
+      return true;
+    } else {
+      console.warn("No session available to refresh");
+      return false;
+    }
+  } catch (error) {
+    console.error("Error in refreshSession:", error);
+    return false;
+  }
+}
+
