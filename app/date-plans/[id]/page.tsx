@@ -1,89 +1,144 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams, useSearchParams } from "next/navigation"
 import { getDatePlan } from "@/app/actions/date-plans"
-import { DatePlan, Activity } from "@/lib/types"
-import { getCurrentUser } from "@/lib/supabase"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { MapPin, Clock, Calendar, Star } from "lucide-react"
-import { Header } from "@/components/header"
-import { Footer } from "@/components/footer"
-import { ShareDatePlan } from "@/components/share-date-plan"
+import { DatePlan } from "@/lib/types"
+import { DateSetCard } from '@/components/date-set-card'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { toast } from 'sonner'
+import { PlaceResult } from '@/lib/search-utils'
+import { Header } from '@/components/header'
+import { Footer } from '@/components/footer'
+import { use } from 'react'
 
-export default function DatePlanPage() {
-  const params = useParams()
-  const searchParams = useSearchParams()
+interface DatePlanPageProps {
+  params: Promise<{
+    id: string
+  }>
+}
+
+export default function DatePlanPage({ params }: DatePlanPageProps) {
+  const resolvedParams = use(params)
   const [datePlan, setDatePlan] = useState<DatePlan | null>(null)
-  const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    async function fetchData() {
+    async function loadDatePlan() {
       try {
-        const [plan, currentUser] = await Promise.all([
-          getDatePlan(params?.id as string),
-          getCurrentUser()
-        ])
-        
-        if (!plan) {
-          throw new Error("Date plan not found")
+        const plan = await getDatePlan(resolvedParams.id)
+        if (plan) {
+          setDatePlan(plan)
+        } else {
+          setError('Date plan not found')
+          toast.error('Date plan not found')
         }
-        setDatePlan(plan)
-        setUser(currentUser)
-      } catch (error) {
-        console.error("Error fetching data:", error)
+      } catch (err) {
+        setError('An unexpected error occurred')
+        toast.error('An unexpected error occurred')
+        console.error('Error loading date plan:', err)
       } finally {
-        setIsLoading(false)
+        setLoading(false)
       }
     }
 
-    if (params?.id) {
-      fetchData()
-    }
-  }, [params?.id])
+    loadDatePlan()
+  }, [resolvedParams.id])
 
-  if (isLoading) {
-    return <div>Loading...</div>
+  if (loading) {
+    return (
+      <>
+        <Header />
+        <main className="container mx-auto py-8">
+          <div className="mb-6">
+            <Skeleton className="h-10 w-32" />
+          </div>
+          <div className="space-y-6">
+            <Skeleton className="h-8 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
   }
 
-  if (!datePlan) {
-    return <div>Date plan not found</div>
+  if (error || !datePlan) {
+    return (
+      <>
+        <Header />
+        <main className="container mx-auto py-8">
+          <div className="mb-6">
+            <Link href="/my-dates">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back to My Dates
+              </Button>
+            </Link>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+            {error || 'Date plan not found'}
+          </div>
+        </main>
+        <Footer />
+      </>
+    )
   }
 
-  const showShare = searchParams?.get("share") === "true"
+  // Convert DatePlan to DateSet format for the DateSetCard component
+  const dateSet = {
+    id: datePlan.id,
+    title: datePlan.title,
+    date: new Date().toISOString().split('T')[0], // Default to today if no date
+    start_time: '12:00', // Default start time
+    end_time: '14:00', // Default end time
+    places: datePlan.activities.map(activity => {
+      // Extract address and rating from description
+      const addressMatch = activity.description.match(/^([^ -]+)/);
+      const ratingMatch = activity.description.match(/Rating: ([\d.]+)/);
+      
+      const address = addressMatch ? addressMatch[1] : '';
+      const rating = ratingMatch ? parseFloat(ratingMatch[1]) : 0;
+      
+      return {
+        id: `place-${Math.random().toString(36).substring(2, 9)}`,
+        name: activity.name,
+        address: address,
+        rating: rating,
+        price: 2, // Default price level (moderate)
+        isOutdoor: false,
+        photoUrl: '',
+        openNow: true,
+        category: 'restaurant',
+        placeId: `place-${Math.random().toString(36).substring(2, 9)}`
+      } as PlaceResult;
+    }),
+    share_id: `share-${datePlan.id}`,
+    notes: datePlan.description,
+    created_at: datePlan.created_at,
+    user_id: datePlan.user_id
+  }
 
   return (
     <>
       <Header />
-      <main className="container mx-auto px-4 py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>{datePlan.title}</CardTitle>
-            <CardDescription>{datePlan.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {datePlan.activities.map((activity: Activity, index: number) => (
-                <div key={index} className="flex items-start space-x-4">
-                  <div className="flex-shrink-0">
-                    <MapPin className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{activity.name}</h3>
-                    <p className="text-sm text-muted-foreground">{activity.description}</p>
-                    <div className="mt-2 flex items-center space-x-2">
-                      <Clock className="h-4 w-4" />
-                      <span className="text-sm">{activity.duration}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        {showShare && <ShareDatePlan dateSet={datePlan} />}
+      <main className="container mx-auto py-8">
+        <div className="mb-6">
+          <Link href="/my-dates">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Back to My Dates
+            </Button>
+          </Link>
+        </div>
+        
+        <DateSetCard dateSet={dateSet} />
       </main>
       <Footer />
     </>

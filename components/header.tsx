@@ -165,6 +165,9 @@ export function Header({ isLoggedIn = false, userName, avatarUrl }: HeaderProps)
           >
             Donate
           </Link>
+          <Link href="/my-dates" className="text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto">
+            My Dates
+          </Link>
         </div>
 
         <div>

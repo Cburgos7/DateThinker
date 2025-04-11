@@ -47,6 +47,7 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
 
     if (envStatus.isPlaceholder) {
       setSupabaseStatus("env-error")
+      setError("Supabase configuration contains placeholder values. Please update your environment variables.")
     }
   }, [])
 
@@ -101,7 +102,7 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
     }
 
     if (!supabase) {
-      setError("Authentication service not available. Please try again later.")
+      setError("Authentication service not available. Please check your environment variables and restart the application.")
       setIsLoading(false)
       return
     }
@@ -160,7 +161,7 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
     }
 
     if (!supabase) {
-      setError("Authentication service not available. Please try again later.")
+      setError("Authentication service not available. Please check your environment variables and restart the application.")
       setIsLoading(false)
       return
     }
@@ -262,6 +263,11 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
 
       if (!supabaseUrl || !supabaseKey) {
         return { error: "Authentication service configuration is missing" }
+      }
+
+      // Check for placeholder values
+      if (supabaseUrl.includes("your-supabase-url") || supabaseKey.includes("your-supabase-anon-key")) {
+        return { error: "Authentication service configuration contains placeholder values. Please update your environment variables." }
       }
 
       const formattedUrl =

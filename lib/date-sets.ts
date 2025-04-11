@@ -27,6 +27,16 @@ export async function createDateSet(
   notes?: string,
 ): Promise<string | null> {
   try {
+    // Check if we're in development mode and using a test user ID
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const isTestUser = userId === 'test-user-id';
+    
+    if (isDevelopment && isTestUser) {
+      console.log("Development mode: Using mock date set ID for testing");
+      // Return a mock ID for testing in development
+      return "mock-date-set-id-" + Date.now();
+    }
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return null
@@ -48,35 +58,63 @@ export async function createDateSet(
     })
 
     // Ensure places is properly serialized as JSON
-    const sanitizedPlaces = places.map((place) => ({
-      id: place.id,
-      name: place.name,
-      rating: place.rating,
-      address: place.address,
-      price: place.price,
-      isOutdoor: place.isOutdoor,
-      photoUrl: place.photoUrl,
-      openNow: place.openNow,
-      category: place.category,
-      placeId: place.placeId,
-    }))
+    // Convert each place to a plain object with only the necessary properties
+    const sanitizedPlaces = places.map((place) => {
+      // Create a plain object with only the properties we need
+      const plainPlace = {
+        id: place.id,
+        name: place.name,
+        rating: place.rating,
+        address: place.address,
+        price: place.price,
+        isOutdoor: place.isOutdoor || false,
+        photoUrl: place.photoUrl || null,
+        openNow: place.openNow || false,
+        category: place.category,
+        placeId: place.placeId || null
+      };
+      
+      // Remove any undefined or null values
+      Object.keys(plainPlace).forEach(key => {
+        if (plainPlace[key as keyof typeof plainPlace] === undefined) {
+          delete plainPlace[key as keyof typeof plainPlace];
+        }
+      });
+      
+      return plainPlace;
+    });
 
+    // Log the sanitized places data
+    console.log("Sanitized places data:", JSON.stringify(sanitizedPlaces, null, 2));
+
+    // Create the data object to insert
+    const dataToInsert = {
+      user_id: userId,
+      title,
+      date,
+      start_time: startTime,
+      end_time: endTime,
+      places: sanitizedPlaces,
+      share_id: shareId,
+      notes: notes || null,
+    };
+    
+    console.log("Data being inserted into Supabase:", JSON.stringify(dataToInsert, null, 2));
+
+    // Insert the data into Supabase
     const { data, error } = await supabase
       .from("date_sets")
-      .insert({
-        user_id: userId,
-        title,
-        date,
-        start_time: startTime,
-        end_time: endTime,
-        places: sanitizedPlaces as any,
-        share_id: shareId,
-        notes: notes || null,
-      } as any)
+      .insert(dataToInsert)
       .select()
 
     if (error) {
       console.error("Supabase error creating date set:", error)
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
       throw error
     }
 
@@ -90,7 +128,7 @@ export async function createDateSet(
     console.log("Date set created successfully with ID:", createdId)
     return createdId
   } catch (error) {
-    console.error("Error creating date set:", error)
+    console.error("Error in createDateSet:", error)
     return null
   }
 }
@@ -98,22 +136,69 @@ export async function createDateSet(
 // Get all date sets for a user
 export async function getUserDateSets(userId: string): Promise<DateSet[]> {
   try {
+    // Check if we're in development mode and using a test user ID
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const isTestUser = userId === 'a17c9b47-b462-4d96-8519-90b7601e76ec';
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return []
     }
 
+    console.log("Fetching date sets for user ID:", userId)
+    
+    // Get real data from Supabase regardless of development mode
     const { data, error } = await supabase
       .from("date_sets")
       .select("*")
-      .eq("user_id", userId as any)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
 
-    if (error) throw error
+    if (error) {
+      console.error("Error fetching date sets:", error)
+      return []
+    }
 
-    return data as unknown as DateSet[]
+    console.log("Fetched date sets from Supabase:", data?.length || 0)
+
+    // In development mode with test user, also include mock data
+    if (isDevelopment && isTestUser) {
+      console.log("Development mode: Including mock date sets for testing");
+      const mockData = [
+        {
+          id: "mock-date-set-1",
+          title: "Test Date Plan",
+          date: new Date().toISOString().split('T')[0],
+          start_time: "6:00 PM",
+          end_time: "8:00 PM",
+          places: [
+            {
+              id: "test-place-1",
+              name: "Test Restaurant",
+              rating: 4.5,
+              address: "123 Test St, Test City, TS 12345",
+              price: 2, // Price level as a number (0-4)
+              isOutdoor: true,
+              photoUrl: "/placeholder.jpg",
+              openNow: true,
+              category: "restaurant",
+              placeId: "test-place-id-1"
+            } as PlaceResult
+          ],
+          share_id: "mock-share-id-1",
+          notes: "This is a test date plan",
+          created_at: new Date().toISOString(),
+          user_id: userId
+        }
+      ];
+      
+      // Combine real data with mock data
+      return [...(data as DateSet[]), ...mockData];
+    }
+
+    return data as DateSet[]
   } catch (error) {
-    console.error("Error getting user date sets:", error)
+    console.error("Error in getUserDateSets:", error)
     return []
   }
 }
@@ -255,5 +340,57 @@ export function generateGoogleCalendarLink(dateSet: DateSet): string {
   })
 
   return `${baseUrl}?${params.toString()}`
+}
+
+export async function updateDateSet(
+  id: string,
+  userId: string,
+  title: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  places: PlaceResult[],
+  notes?: string
+): Promise<boolean> {
+  try {
+    // Check if we're in development mode and using a test user ID
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const isTestUser = userId === 'test-user-id';
+    
+    if (isDevelopment && isTestUser) {
+      console.log("Development mode: Updating mock date set");
+      return true;
+    }
+    
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables")
+      return false
+    }
+
+    // Update the date set in the database
+    const { error } = await supabase
+      .from('date_sets')
+      .update({
+        title,
+        date,
+        start_time: startTime,
+        end_time: endTime,
+        places,
+        notes: notes || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error("Error updating date set:", error)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error("Error updating date set:", error)
+    return false
+  }
 }
 

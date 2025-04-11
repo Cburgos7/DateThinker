@@ -54,6 +54,17 @@ const nextConfig = {
   images: {
     domains: ["images.unsplash.com"],
   },
+  // Fix for case sensitivity issues with date-fns
+  webpack: (config) => {
+    // Add a resolve alias for date-fns to ensure consistent casing
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'date-fns': require.resolve('date-fns'),
+      'date-fns/locale': require.resolve('date-fns/locale'),
+    };
+    
+    return config;
+  },
 }
 
 module.exports = nextConfig

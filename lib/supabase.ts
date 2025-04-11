@@ -13,48 +13,67 @@ export const supabase = (() => {
     // Get environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    const siteUrl = getSiteUrl()
 
-    // Log configuration for debugging
-    console.log("Creating Supabase client with:", {
-      urlExists: !!supabaseUrl,
+    // Log full configuration for debugging
+    console.log("🔧 Initializing Supabase client with config:", {
+      url: supabaseUrl,
       keyExists: !!supabaseAnonKey,
-      siteUrl,
+      nodeEnv: process.env.NODE_ENV,
+      isDevelopment: process.env.NODE_ENV === 'development'
     })
 
     if (!supabaseUrl || !supabaseAnonKey) {
-      console.error("Missing Supabase environment variables")
+      console.error("❌ Missing Supabase environment variables:", {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseAnonKey
+      })
       return null
     }
 
-    // Ensure URL is properly formatted with https://
-    const formattedUrl = supabaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
-    const finalUrl = `https://${formattedUrl}`
-
     // Create client with more robust options
-    const client = createClient<Database>(finalUrl, supabaseAnonKey, {
+    console.log("🔄 Creating Supabase client...");
+    const client = createClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: "pkce"
-      },
-      global: {
-        headers: {
-          "X-Client-Info": "datethinker-web-app",
-        },
       }
     })
 
-    // Test the client with a simple operation
-    client.auth.getSession().catch(error => {
-      console.error("Error testing Supabase client:", error)
-      return null
-    })
+    // Test the connection immediately
+    console.log("🔍 Testing Supabase connection...");
+    
+    // Perform a simple query to test the connection
+    client.from('date_sets').select('count').single()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("❌ Supabase connection test failed:", {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          })
+        } else {
+          console.log("✅ Supabase connection test successful:", data)
+        }
+      })
+      .catch((error: Error) => {
+        console.error("❌ Exception testing Supabase connection:", {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        })
+      })
 
+    console.log("✅ Supabase client initialized");
     return client
   } catch (error) {
-    console.error("Error creating Supabase client:", error)
+    console.error("❌ Fatal error initializing Supabase client:", error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    } : error)
     return null
   }
 })()
@@ -72,129 +91,24 @@ export type UserWithSubscription = {
 }
 
 // Get the current authenticated user with subscription info
-export async function getCurrentUser(): Promise<UserWithSubscription | null> {
+export async function getCurrentUser() {
   try {
-    // If supabase client isn't initialized, return null
     if (!supabase) {
-      console.warn("Supabase client not initialized - missing environment variables")
+      console.warn("Supabase client not initialized")
       return null
     }
 
-    // First check if we have a session
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    const { data: { session } } = await supabase.auth.getSession()
 
-    if (sessionError) {
-      console.error("Error getting session:", sessionError)
-      return null
+    if (session) {
+      console.log("Active session found for user ID:", session.user.id);
+      return session.user
     }
 
-    // If no session exists, return null without trying to get the user
-    if (!sessionData.session) {
-      console.log("No active session found")
-      return null
-    }
-
-    // Now that we know we have a session, get the user
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-
-    if (userError) {
-      console.error("Error getting user:", userError)
-      return null
-    }
-
-    if (!userData.user) {
-      console.log("No user data found despite having a session")
-      return null
-    }
-
-    // Get the user's profile with subscription info
-    try {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userData.user.id)
-        .single()
-
-      if (profileError) {
-        // If the profile doesn't exist yet, we might need to create it
-        if (profileError.code === "PGRST116") {
-          // Create a default profile for the user
-          const defaultProfile = {
-            id: userData.user.id,
-            full_name: userData.user.email?.split("@")[0] || null,
-            avatar_url: null,
-            subscription_status: "free",
-          }
-
-          const { error: insertError } = await supabase.from("profiles").insert(defaultProfile)
-
-          if (insertError) {
-            console.error("Error creating profile:", insertError)
-          }
-
-          return {
-            id: userData.user.id,
-            email: userData.user.email!,
-            full_name: userData.user.email?.split("@")[0] || null,
-            avatar_url: null,
-            subscription_status: "free",
-            subscription_expiry: null,
-            stripe_customer_id: null,
-            created_at: undefined,
-          }
-        } else {
-          console.error("Error getting profile:", profileError)
-          return {
-            id: userData.user.id,
-            email: userData.user.email!,
-            full_name: userData.user.email?.split("@")[0] || null,
-            avatar_url: null,
-            subscription_status: "free",
-            subscription_expiry: null,
-            stripe_customer_id: null,
-            created_at: undefined,
-          }
-        }
-      }
-
-      if (!profile) {
-        return {
-          id: userData.user.id,
-          email: userData.user.email!,
-          full_name: userData.user.email?.split("@")[0] || null,
-          avatar_url: null,
-          subscription_status: "free",
-          subscription_expiry: null,
-          stripe_customer_id: null,
-          created_at: undefined,
-        }
-      }
-
-      return {
-        id: userData.user.id,
-        email: userData.user.email!,
-        full_name: profile.full_name,
-        avatar_url: profile.avatar_url,
-        subscription_status: profile.subscription_status || "free",
-        subscription_expiry: profile.subscription_expiry,
-        stripe_customer_id: profile.stripe_customer_id,
-        created_at: profile.created_at,
-      }
-    } catch (profileError) {
-      console.error("Error in profile handling:", profileError)
-      return {
-        id: userData.user.id,
-        email: userData.user.email!,
-        full_name: userData.user.email?.split("@")[0] || null,
-        avatar_url: null,
-        subscription_status: "free",
-        subscription_expiry: null,
-        stripe_customer_id: null,
-        created_at: undefined,
-      }
-    }
+    console.log("No active session found. Please log in.");
+    return null
   } catch (error) {
-    console.error("Error getting current user:", error)
+    console.error("Error retrieving current user:", error);
     return null
   }
 }
@@ -305,7 +219,9 @@ export function checkSupabaseEnvVars(): {
 
   const urlExists = !!supabaseUrl
   const keyExists = !!supabaseAnonKey
-  const isPlaceholder = supabaseAnonKey ? supabaseAnonKey.includes("your-supabase-anon-key") : false
+  const isPlaceholder = 
+    (supabaseUrl ? supabaseUrl.includes("your-supabase-url") : false) || 
+    (supabaseAnonKey ? supabaseAnonKey.includes("your-supabase-anon-key") : false)
 
   return {
     urlExists,
