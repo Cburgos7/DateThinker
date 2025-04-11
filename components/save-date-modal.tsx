@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -21,7 +21,7 @@ import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { saveDateSetAction } from "@/app/actions/date-sets"
+import { saveDateSetAction, saveDateSetWithUserIdAction } from "@/app/actions/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
@@ -48,7 +48,12 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const router = useRouter()
-  const { refreshAuth } = useAuth()
+  const { refreshAuth, user, authStatus, lastAuthError } = useAuth()
+
+  // Log auth status on mount and when it changes
+  useEffect(() => {
+    console.log("SaveDateModal auth status:", authStatus, "User ID:", user?.id || "none", "Error:", lastAuthError || "none");
+  }, [authStatus, user, lastAuthError]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -66,8 +71,26 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
     setErrorMessage("")
 
     try {
-      // Try to refresh the auth session before submitting
-      await refreshAuth()
+      // Check authentication before trying to save
+      if (authStatus !== 'authenticated' || !user) {
+        console.log("Auth check failed before save:", { authStatus, user: !!user });
+        
+        // Try to refresh auth session
+        const refreshed = await refreshAuth();
+        
+        if (!refreshed || authStatus !== 'authenticated' || !user) {
+          const errorMsg = `Authentication issues detected. Status: ${authStatus}. ${lastAuthError ? `Error: ${lastAuthError}` : ''}`;
+          console.error(errorMsg);
+          setErrorMessage("You must be logged in to save a date plan. Please try signing out completely and signing back in.");
+          toast({
+            title: "Authentication Error",
+            description: "Please sign out and sign back in to refresh your session.",
+            variant: "destructive"
+          });
+          setIsSubmitting(false);
+          return;
+        }
+      }
       
       // Format the date to YYYY-MM-DD
       const dateObj = new Date(values.date)
@@ -79,17 +102,20 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
         startTime: values.startTime,
         endTime: values.endTime,
         notes: values.notes,
-        places: places.length
+        places: places.length,
+        userID: user?.id || "No user ID found",
+        authStatus
       })
       console.log("Places to save:", places)
 
-      const result = await saveDateSetAction(
+      const result = await saveDateSetWithUserIdAction(
         values.title,
         formattedDate,
         values.startTime,
         values.endTime,
         places,
         values.notes,
+        user.id
       )
 
       if (!result.success) {

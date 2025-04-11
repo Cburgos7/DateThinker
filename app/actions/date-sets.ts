@@ -40,17 +40,72 @@ export async function saveDateSetAction(
     
     // Create a server action client
     const cookieStore = cookies()
-    const supabase = createServerActionClient({ cookies: () => cookieStore })
     
-    // Get the session with additional debugging
-    const sessionResponse = await supabase.auth.getSession()
-    console.log("Auth session response:", {
-      hasSession: !!sessionResponse.data.session,
-      error: sessionResponse.error ? sessionResponse.error.message : null
-    });
+    // Try three different approaches to get the user session
+    let userId = null;
+    let authError = null;
     
-    // Get user ID with fallback for development
-    let userId = sessionResponse.data.session?.user?.id;
+    // Approach 1: Use the createServerActionClient
+    try {
+      const supabaseServer = createServerActionClient({ cookies: () => cookieStore })
+      const sessionResponse = await supabaseServer.auth.getSession()
+      console.log("Auth session response (approach 1):", {
+        hasSession: !!sessionResponse.data.session,
+        error: sessionResponse.error ? sessionResponse.error.message : null
+      });
+      
+      if (sessionResponse.data.session?.user?.id) {
+        userId = sessionResponse.data.session.user.id;
+        console.log("User ID found with approach 1:", userId);
+      } else {
+        authError = "No session found with approach 1";
+      }
+    } catch (e) {
+      console.error("Error with approach 1:", e);
+      authError = `Approach 1 error: ${e instanceof Error ? e.message : 'Unknown error'}`;
+    }
+    
+    // Approach 2: Use the imported supabase client directly
+    if (!userId && supabase) {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        console.log("Auth session response (approach 2):", {
+          hasSession: !!data.session,
+          error: error ? error.message : null
+        });
+        
+        if (data.session?.user?.id) {
+          userId = data.session.user.id;
+          console.log("User ID found with approach 2:", userId);
+        } else {
+          if (!authError) authError = "No session found with approach 2";
+        }
+      } catch (e) {
+        console.error("Error with approach 2:", e);
+        if (!authError) authError = `Approach 2 error: ${e instanceof Error ? e.message : 'Unknown error'}`;
+      }
+    }
+    
+    // Approach 3: Use getCurrentUser from supabase.ts
+    if (!userId) {
+      try {
+        const user = await getCurrentUser();
+        console.log("Auth session response (approach 3):", {
+          hasUser: !!user,
+          userId: user?.id
+        });
+        
+        if (user?.id) {
+          userId = user.id;
+          console.log("User ID found with approach 3:", userId);
+        } else {
+          if (!authError) authError = "No user found with approach 3";
+        }
+      } catch (e) {
+        console.error("Error with approach 3:", e);
+        if (!authError) authError = `Approach 3 error: ${e instanceof Error ? e.message : 'Unknown error'}`;
+      }
+    }
     
     // Debug cookie information
     console.log("Cookie store available:", !!cookieStore);
@@ -62,11 +117,22 @@ export async function saveDateSetAction(
     }
 
     if (!userId) {
-      console.error("No user ID available");
-      return { success: false, error: "User not authenticated. Please try signing out completely and signing back in." }
+      console.error("No user ID available after all approaches", { authError });
+      return { 
+        success: false, 
+        error: "User not authenticated. Please try signing out completely and signing back in. Error details: " + authError 
+      }
     }
 
     console.log("Using user ID:", userId);
+    
+    // Use the imported supabase client for the database operation
+    if (!supabase) {
+      return { 
+        success: false, 
+        error: "Database client not initialized" 
+      }
+    }
     
     // Generate a unique ID for the date set
     const id = uuidv4();
@@ -93,7 +159,7 @@ export async function saveDateSetAction(
       places_count: places.length
     });
 
-    // Insert the data
+    // Insert the data using the imported supabase client
     const { data, error } = await supabase
       .from('date_sets')
       .insert(dataToInsert)
@@ -453,6 +519,88 @@ export async function getDateSetSharedUsersAction(
     return { 
       success: false, 
       error: "Failed to retrieve users with access to this date set" 
+    }
+  }
+}
+
+// New version of saveDateSetAction that accepts an explicit user ID
+export async function saveDateSetWithUserIdAction(
+  title: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  places: PlaceResult[],
+  notes: string | undefined,
+  clientUserId: string
+) {
+  try {
+    console.log("Starting saveDateSetWithUserIdAction with client-provided user ID:", clientUserId);
+    
+    if (!clientUserId) {
+      return { 
+        success: false, 
+        error: "No user ID provided" 
+      }
+    }
+    
+    // Use the imported supabase client for the database operation
+    if (!supabase) {
+      return { 
+        success: false, 
+        error: "Database client not initialized" 
+      }
+    }
+    
+    // Generate a unique ID for the date set
+    const id = uuidv4();
+
+    // Prepare data for insert
+    const dataToInsert = {
+      id,  // Include the generated ID
+      user_id: clientUserId,
+      title,
+      date,
+      start_time: startTime,
+      end_time: endTime,
+      places,
+      share_id: `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      notes: notes || null,
+    }
+    
+    // Log the insert attempt
+    console.log("Attempting to insert date set with client-provided user ID:", {
+      id,
+      user_id: clientUserId,
+      title,
+      date,
+      places_count: places.length
+    });
+
+    // Insert the data using the imported supabase client
+    const { data, error } = await supabase
+      .from('date_sets')
+      .insert(dataToInsert)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("Failed to create date set:", {
+        error: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      return { success: false, error: `Failed to create date set: ${error.message}` }
+    }
+
+    console.log("Successfully created date set with ID:", data.id);
+    return { success: true, dateSetId: data.id }
+    
+  } catch (error) {
+    console.error("Error in saveDateSetWithUserIdAction:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Failed to save date set" 
     }
   }
 }
