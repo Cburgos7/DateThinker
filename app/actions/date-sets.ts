@@ -543,13 +543,32 @@ export async function saveDateSetWithUserIdAction(
       }
     }
     
-    // Use the imported supabase client for the database operation
-    if (!supabase) {
+    // Create a server action client with the correct auth context
+    const cookieStore = cookies()
+    const supabaseServer = createServerActionClient({ cookies: () => cookieStore })
+    
+    // Verify the session on the server
+    const { data: { session } } = await supabaseServer.auth.getSession()
+    
+    if (!session) {
+      console.error("No active session found on server");
       return { 
         success: false, 
-        error: "Database client not initialized" 
+        error: "No authenticated session found on server. Please sign out and sign back in." 
       }
     }
+    
+    if (session.user.id !== clientUserId) {
+      console.warn("Server session user ID doesn't match client user ID", {
+        serverUserId: session.user.id,
+        clientUserId
+      });
+      // We'll continue with the server user ID
+    }
+    
+    // Use the server session user ID for the insert operation
+    const serverUserId = session.user.id;
+    console.log("Using server session user ID for insert:", serverUserId);
     
     // Generate a unique ID for the date set
     const id = uuidv4();
@@ -557,7 +576,7 @@ export async function saveDateSetWithUserIdAction(
     // Prepare data for insert
     const dataToInsert = {
       id,  // Include the generated ID
-      user_id: clientUserId,
+      user_id: serverUserId, // IMPORTANT: Use the server session user ID
       title,
       date,
       start_time: startTime,
@@ -568,16 +587,16 @@ export async function saveDateSetWithUserIdAction(
     }
     
     // Log the insert attempt
-    console.log("Attempting to insert date set with client-provided user ID:", {
+    console.log("Attempting to insert date set with server session user ID:", {
       id,
-      user_id: clientUserId,
+      user_id: serverUserId,
       title,
       date,
       places_count: places.length
     });
 
-    // Insert the data using the imported supabase client
-    const { data, error } = await supabase
+    // Insert the data using the server action client
+    const { data, error } = await supabaseServer
       .from('date_sets')
       .insert(dataToInsert)
       .select()
