@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState } from "react"
-import { supabase, refreshSession } from "@/lib/supabase"
+import { supabase, refreshSession, robustGetUser } from "@/lib/supabase"
 
 type AuthContextType = {
   user: any | null
@@ -25,10 +25,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authStatus, setAuthStatus] = useState<'initializing' | 'authenticated' | 'unauthenticated' | 'error'>('initializing')
   const [lastAuthError, setLastAuthError] = useState<string | null>(null)
 
+  // Set auth status immediately when user changes
+  useEffect(() => {
+    if (!loading) {
+      setAuthStatus(user ? 'authenticated' : 'unauthenticated');
+      console.log("Auth status updated based on user:", user ? 'authenticated' : 'unauthenticated');
+    }
+  }, [user, loading]);
+
   // Function to refresh authentication
   const refreshAuth = async (): Promise<boolean> => {
     try {
       setAuthStatus('initializing')
+      
+      // Use the more robust user fetching method
+      const robustUser = await robustGetUser();
+      
+      if (robustUser) {
+        setUser(robustUser);
+        setAuthStatus('authenticated');
+        console.log("Auth refreshed with robustGetUser, user found:", robustUser.id);
+        return true;
+      }
+      
+      // Fall back to the original refresh logic if needed
       const success = await refreshSession();
       if (success && supabase) {
         const { data, error } = await supabase.auth.getSession();
@@ -64,6 +84,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
         
+        // Try the robust method first
+        const robustUser = await robustGetUser();
+        if (robustUser) {
+          setUser(robustUser);
+          setAuthStatus('authenticated');
+          console.log("Initial auth check with robustGetUser: user found", robustUser.id);
+          setLoading(false);
+          return;
+        }
+        
+        // Fall back to standard method
         const { data, error } = await supabase.auth.getSession()
         if (error) {
           setLastAuthError(error.message)

@@ -25,7 +25,7 @@ import { saveDateSetAction, saveDateSetWithUserIdAction } from "@/app/actions/da
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
-import { refreshSession } from "@/lib/supabase"
+import { refreshSession, robustGetUser } from "@/lib/supabase"
 import { useAuth } from "@/app/auth-context"
 
 const formSchema = z.object({
@@ -71,31 +71,52 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
     setErrorMessage("")
 
     try {
-      // Check authentication before trying to save
-      if (authStatus !== 'authenticated' || !user) {
-        console.log("Auth check failed before save:", { authStatus, user: !!user });
+      console.log("Starting form submission - User:", !!user, "Auth status:", authStatus);
+      
+      // Direct check for user existence rather than relying on auth status
+      let userId = user?.id;
+      
+      if (!userId) {
+        console.log("No user found, attempting to get user with robust method...");
         
-        // Try to refresh auth session
-        const refreshed = await refreshAuth();
-        
-        if (!refreshed || authStatus !== 'authenticated' || !user) {
-          const errorMsg = `Authentication issues detected. Status: ${authStatus}. ${lastAuthError ? `Error: ${lastAuthError}` : ''}`;
-          console.error(errorMsg);
-          setErrorMessage("You must be logged in to save a date plan. Please try signing out completely and signing back in.");
-          toast({
-            title: "Authentication Error",
-            description: "Please sign out and sign back in to refresh your session.",
-            variant: "destructive"
-          });
-          setIsSubmitting(false);
-          return;
+        // Try to get user with robust method
+        const robustUserResult = await robustGetUser();
+        if (robustUserResult && robustUserResult.id) {
+          userId = robustUserResult.id;
+          console.log("Retrieved user with robust method:", userId);
+        } else {
+          // Try to refresh auth as fallback
+          console.log("Robust method failed, trying refreshAuth...");
+          await refreshAuth();
+          
+          // Check if we have a user now
+          if (user && user.id) {
+            userId = user.id;
+            console.log("Retrieved user after refreshAuth:", userId);
+          } else {
+            console.error("All authentication methods failed");
+            setErrorMessage("Unable to authenticate. Please sign out completely and sign in again.");
+            toast({
+              title: "Authentication Error",
+              description: "Please sign out and sign back in to refresh your session.",
+              variant: "destructive"
+            });
+            setIsSubmitting(false);
+            return;
+          }
         }
       }
+      
+      // Force a short delay to ensure auth is fully processed
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // Format the date to YYYY-MM-DD
       const dateObj = new Date(values.date)
       const formattedDate = dateObj.toISOString().split('T')[0]
 
+      // Report user status for debugging
+      console.log("Proceeding with submission - User ID:", userId, "Auth status:", authStatus);
+      
       console.log("Submitting form with values:", {
         title: values.title,
         date: values.date,
@@ -103,11 +124,17 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
         endTime: values.endTime,
         notes: values.notes,
         places: places.length,
-        userID: user?.id || "No user ID found",
+        userID: userId,
         authStatus
       })
       console.log("Places to save:", places)
 
+      // Final safety check before submission
+      if (!userId) {
+        throw new Error("User ID is required but not available");
+      }
+
+      // Proceed with server action using direct user ID
       const result = await saveDateSetWithUserIdAction(
         values.title,
         formattedDate,
@@ -115,7 +142,7 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
         values.endTime,
         places,
         values.notes,
-        user.id
+        userId
       )
 
       if (!result.success) {

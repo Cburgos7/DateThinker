@@ -304,3 +304,46 @@ export async function refreshSession() {
   }
 }
 
+// A more robust way to get the user with multiple fallbacks
+export async function robustGetUser(): Promise<any | null> {
+  if (!supabase) {
+    console.warn("Supabase client not initialized");
+    return null;
+  }
+
+  try {
+    // Try with getSession first
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.warn("Error getting session:", sessionError.message);
+    } else if (sessionData?.session?.user) {
+      return sessionData.session.user;
+    }
+    
+    // If that fails, try with getUser
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    
+    if (userError) {
+      console.warn("Error getting user:", userError.message);
+    } else if (userData?.user) {
+      return userData.user;
+    }
+    
+    // As a last resort, try to refresh the session
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+    
+    if (refreshError) {
+      console.warn("Error refreshing session:", refreshError.message);
+    } else if (refreshData?.session?.user) {
+      return refreshData.session.user;
+    }
+    
+    console.warn("No user found after all attempts");
+    return null;
+  } catch (error) {
+    console.error("Error in robustGetUser:", error);
+    return null;
+  }
+}
+
