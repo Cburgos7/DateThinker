@@ -545,37 +545,97 @@ export async function saveDateSetWithUserIdAction(
     
     // Create a server action client with the correct auth context
     const cookieStore = cookies()
-    const supabaseServer = createServerActionClient({ cookies: () => cookieStore })
     
-    // Verify the session on the server
-    const { data: { session } } = await supabaseServer.auth.getSession()
+    // Log cookie debugging info
+    try {
+      console.log("Cookie store available:", !!cookieStore);
+    } catch (e) {
+      console.log("Could not log cookies:", e);
+    }
     
-    if (!session) {
-      console.error("No active session found on server");
+    const supabaseServer = createServerActionClient({ cookies: () => cookieStore });
+    
+    // Attempt to get session
+    console.log("Attempting to get server-side session...");
+    const { data: sessionData, error: sessionError } = await supabaseServer.auth.getSession();
+    
+    if (sessionError) {
+      console.error("Error getting session:", sessionError);
+      return { 
+        success: false, 
+        error: "Error retrieving authentication session: " + sessionError.message
+      }
+    }
+    
+    if (!sessionData.session) {
+      console.error("No session found on server");
+      
+      // Fallback to development mode if needed
+      if (process.env.NODE_ENV === 'development') {
+        console.log("Development mode: Using development fallback");
+        
+        // Use the imported supabase client as a fallback
+        if (!supabase) {
+          return { 
+            success: false, 
+            error: "No session found and no fallback client available" 
+          }
+        }
+        
+        // In development, just use the client user ID directly
+        const id = uuidv4();
+        const dataToInsert = {
+          id,
+          user_id: clientUserId,
+          title,
+          date,
+          start_time: startTime,
+          end_time: endTime,
+          places,
+          share_id: `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          notes: notes || null,
+        }
+        
+        console.log("DEV MODE: Attempting to insert with client user ID directly:", clientUserId);
+        
+        const { data, error } = await supabase
+          .from('date_sets')
+          .insert(dataToInsert)
+          .select()
+          .single()
+        
+        if (error) {
+          console.error("DEV MODE: Failed to create date set:", error);
+          return { success: false, error: `Failed to create date set: ${error.message}` }
+        }
+        
+        console.log("DEV MODE: Successfully created date set with ID:", data.id);
+        return { success: true, dateSetId: data.id }
+      }
+      
       return { 
         success: false, 
         error: "No authenticated session found on server. Please sign out and sign back in." 
       }
     }
     
-    if (session.user.id !== clientUserId) {
+    const serverUserId = sessionData.session.user.id;
+    console.log("Server session found with user ID:", serverUserId);
+    
+    if (serverUserId !== clientUserId) {
       console.warn("Server session user ID doesn't match client user ID", {
-        serverUserId: session.user.id,
+        serverUserId,
         clientUserId
       });
       // We'll continue with the server user ID
     }
-    
-    // Use the server session user ID for the insert operation
-    const serverUserId = session.user.id;
-    console.log("Using server session user ID for insert:", serverUserId);
     
     // Generate a unique ID for the date set
     const id = uuidv4();
 
     // Prepare data for insert
     const dataToInsert = {
-      id,  // Include the generated ID
+      id,
       user_id: serverUserId, // IMPORTANT: Use the server session user ID
       title,
       date,
