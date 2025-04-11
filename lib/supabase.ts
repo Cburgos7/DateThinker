@@ -44,27 +44,31 @@ export const supabase = (() => {
     // Test the connection immediately
     console.log("🔍 Testing Supabase connection...");
     
-    // Perform a simple query to test the connection
-    client.from('date_sets').select('count').single()
-      .then(({ data, error }) => {
+    // Perform a simple query to test the connection through a separate async function
+    const testConnection = async () => {
+      try {
+        const { data, error } = await client.from('date_sets').select('count').single();
         if (error) {
           console.error("❌ Supabase connection test failed:", {
             message: error.message,
             details: error.details,
             hint: error.hint,
             code: error.code
-          })
+          });
         } else {
-          console.log("✅ Supabase connection test successful:", data)
+          console.log("✅ Supabase connection test successful:", data);
         }
-      })
-      .catch((error: Error) => {
-        console.error("❌ Exception testing Supabase connection:", {
+      } catch (error) {
+        console.error("❌ Exception testing Supabase connection:", error instanceof Error ? {
           name: error.name,
           message: error.message,
           stack: error.stack
-        })
-      })
+        } : error);
+      }
+    };
+    
+    // Execute the test
+    testConnection();
 
     console.log("✅ Supabase client initialized");
     return client
@@ -109,6 +113,47 @@ export async function getCurrentUser() {
     return null
   } catch (error) {
     console.error("Error retrieving current user:", error);
+    return null
+  }
+}
+
+// Get the current user with subscription info from the profiles table
+export async function getUserWithSubscription(): Promise<UserWithSubscription | null> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized")
+      return null
+    }
+
+    const user = await getCurrentUser()
+    if (!user) {
+      return null
+    }
+
+    // Get profile data with subscription info
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single()
+
+    if (error) {
+      console.error("Error retrieving user profile:", error)
+      return null
+    }
+
+    return {
+      id: user.id,
+      email: user.email || "",
+      full_name: data.full_name,
+      avatar_url: data.avatar_url,
+      subscription_status: data.subscription_status,
+      subscription_expiry: data.subscription_expiry,
+      stripe_customer_id: data.stripe_customer_id,
+      created_at: data.created_at
+    }
+  } catch (error) {
+    console.error("Error retrieving user with subscription:", error)
     return null
   }
 }

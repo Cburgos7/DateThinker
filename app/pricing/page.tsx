@@ -1,4 +1,4 @@
-import { getCurrentUser } from "@/lib/supabase"
+import { getCurrentUser, getUserWithSubscription } from "@/lib/supabase"
 import { createMonthlySubscription, createLifetimeMembership } from "@/app/actions/subscription"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,15 +8,16 @@ import { Footer } from "@/components/footer"
 
 export default async function PricingPage() {
   const user = await getCurrentUser()
+  const userWithSubscription = await getUserWithSubscription()
   const isAuthenticated = !!user
-  const subscriptionStatus = user?.subscription_status || "free"
+  const subscriptionStatus = userWithSubscription?.subscription_status || "free"
 
   return (
     <>
       <Header 
         isLoggedIn={isAuthenticated} 
-        userName={user?.full_name || undefined}
-        avatarUrl={user?.avatar_url || undefined}
+        userName={user?.user_metadata?.full_name || user?.email || undefined}
+        avatarUrl={user?.user_metadata?.avatar_url || undefined}
       />
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">

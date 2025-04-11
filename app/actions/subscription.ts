@@ -1,7 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { getCurrentUser, updateUserSubscription } from "@/lib/supabase"
+import { getCurrentUser, getUserWithSubscription, updateUserSubscription } from "@/lib/supabase"
 import { getOrCreateCustomer, createSubscriptionCheckout, createOneTimeCheckout } from "@/lib/stripe"
 import { getStripe } from "@/lib/stripe"
 
@@ -12,23 +12,33 @@ const LIFETIME_PRICE_ID = process.env.STRIPE_LIFETIME_PRICE_ID || ""
 // Create a checkout session for monthly subscription
 export async function createMonthlySubscription(formData: FormData) {
   const user = await getCurrentUser()
+  const userWithSubscription = await getUserWithSubscription()
 
   if (!user) {
     redirect("/login?redirect=/pricing")
   }
 
   // Get or create Stripe customer
-  let customerId = user.stripe_customer_id
+  let customerId = userWithSubscription?.stripe_customer_id
 
   if (!customerId) {
-    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name || undefined)
+    customerId = await getOrCreateCustomer(
+      user.id, 
+      user.email || "", 
+      user.user_metadata?.full_name || undefined
+    )
 
     if (!customerId) {
       throw new Error("Failed to create Stripe customer")
     }
 
     // Update Supabase user with Stripe customer ID
-    await updateUserSubscription(user.id, user.subscription_status || "free", user.subscription_expiry, customerId)
+    await updateUserSubscription(
+      user.id, 
+      userWithSubscription?.subscription_status || "free", 
+      userWithSubscription?.subscription_expiry || null, 
+      customerId
+    )
   }
 
   // Create checkout session
@@ -48,23 +58,33 @@ export async function createMonthlySubscription(formData: FormData) {
 // Create a checkout session for lifetime membership
 export async function createLifetimeMembership(formData: FormData) {
   const user = await getCurrentUser()
+  const userWithSubscription = await getUserWithSubscription()
 
   if (!user) {
     redirect("/login?redirect=/pricing")
   }
 
   // Get or create Stripe customer
-  let customerId = user.stripe_customer_id
+  let customerId = userWithSubscription?.stripe_customer_id
 
   if (!customerId) {
-    customerId = await getOrCreateCustomer(user.id, user.email, user.full_name || undefined)
+    customerId = await getOrCreateCustomer(
+      user.id, 
+      user.email || "", 
+      user.user_metadata?.full_name || undefined
+    )
 
     if (!customerId) {
       throw new Error("Failed to create Stripe customer")
     }
 
     // Update Supabase user with Stripe customer ID
-    await updateUserSubscription(user.id, user.subscription_status || "free", user.subscription_expiry, customerId)
+    await updateUserSubscription(
+      user.id, 
+      userWithSubscription?.subscription_status || "free", 
+      userWithSubscription?.subscription_expiry || null, 
+      customerId
+    )
   }
 
   // Create checkout session
@@ -84,8 +104,9 @@ export async function createLifetimeMembership(formData: FormData) {
 // Cancel subscription
 export async function cancelSubscription() {
   const user = await getCurrentUser()
+  const userWithSubscription = await getUserWithSubscription()
 
-  if (!user || !user.stripe_customer_id) {
+  if (!user || !userWithSubscription || !userWithSubscription.stripe_customer_id) {
     throw new Error("User not found or no subscription")
   }
 
@@ -94,7 +115,7 @@ export async function cancelSubscription() {
 
     // Find active subscriptions
     const subscriptions = await stripe.subscriptions.list({
-      customer: user.stripe_customer_id,
+      customer: userWithSubscription.stripe_customer_id,
       status: "active",
     })
 

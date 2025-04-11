@@ -21,7 +21,7 @@ export default async function DatePlansPage() {
 
   return (
     <>
-      <Header isLoggedIn={!!user} userName={user?.full_name || undefined} avatarUrl={user?.avatar_url || undefined} />
+      <Header isLoggedIn={!!user} userName={user?.user_metadata?.full_name || user?.email || undefined} avatarUrl={user?.user_metadata?.avatar_url || undefined} />
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">
