@@ -11,11 +11,18 @@ import {
   generateICalEvent,
   generateGoogleCalendarLink,
   type DateSet,
+  shareDateSet,
+  unshareDateSet,
+  getSharedWithMeDateSets,
+  getDateSetSharedUsers,
+  updateDateSet,
+  SharedDateSet
 } from "@/lib/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
 import { storeMockDateSet } from "@/app/actions/date-plans"
 import { getCurrentUser } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
+import { supabase } from "@/lib/supabase"
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -304,6 +311,135 @@ export async function updateDateSetAction(
   } catch (error) {
     console.error("Error updating date set:", error)
     return { success: false, error: "Failed to update date set" }
+  }
+}
+
+// NEW SERVER ACTIONS FOR SHARING
+
+// Share a date set with another user by email
+export async function shareDateSetWithUserAction(
+  dateSetId: string,
+  ownerId: string, 
+  userEmail: string,
+  permissionLevel: "view" | "edit" = "view"
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!supabase) {
+      return { 
+        success: false, 
+        error: "Database client not initialized" 
+      }
+    }
+    
+    // Find the user by their email in the profiles table
+    const { data: userData, error: userError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("email", userEmail)
+      .maybeSingle()
+
+    if (userError) {
+      console.error("Error finding user:", userError)
+      return { 
+        success: false, 
+        error: "Error finding user: " + userError.message 
+      }
+    }
+
+    if (!userData) {
+      return { 
+        success: false, 
+        error: "Could not find a user with that email address" 
+      }
+    }
+
+    const sharedWithId = userData.id
+
+    // Now share with this user
+    const shareResult = await shareDateSet(
+      dateSetId, 
+      ownerId, 
+      sharedWithId, 
+      permissionLevel
+    )
+
+    if (!shareResult) {
+      return { 
+        success: false, 
+        error: "Failed to share the date set" 
+      }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in shareDateSetWithUserAction:", error)
+    return { 
+      success: false, 
+      error: "An unexpected error occurred while sharing the date set" 
+    }
+  }
+}
+
+// Unshare a date set with a user
+export async function unshareDateSetAction(
+  dateSetId: string,
+  ownerId: string,
+  sharedWithId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const result = await unshareDateSet(dateSetId, ownerId, sharedWithId)
+
+    if (!result) {
+      return { 
+        success: false, 
+        error: "Failed to remove user from shared date set" 
+      }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in unshareDateSetAction:", error)
+    return { 
+      success: false, 
+      error: "An unexpected error occurred while unsharing the date set" 
+    }
+  }
+}
+
+// Get all date sets shared with the current user
+export async function getSharedWithMeDateSetsAction(
+  userId: string
+): Promise<{ success: boolean; dateSets?: SharedDateSet[]; error?: string }> {
+  try {
+    const dateSets = await getSharedWithMeDateSets(userId)
+    return { success: true, dateSets }
+  } catch (error) {
+    console.error("Error in getSharedWithMeDateSetsAction:", error)
+    return { 
+      success: false, 
+      error: "Failed to retrieve shared date sets" 
+    }
+  }
+}
+
+// Get all users a date set is shared with
+export async function getDateSetSharedUsersAction(
+  dateSetId: string,
+  ownerId: string
+): Promise<{ 
+  success: boolean; 
+  users?: { id: string; full_name: string | null; permission_level: "view" | "edit" }[]; 
+  error?: string 
+}> {
+  try {
+    const users = await getDateSetSharedUsers(dateSetId, ownerId)
+    return { success: true, users }
+  } catch (error) {
+    console.error("Error in getDateSetSharedUsersAction:", error)
+    return { 
+      success: false, 
+      error: "Failed to retrieve users with access to this date set" 
+    }
   }
 }
 

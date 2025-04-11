@@ -137,6 +137,90 @@ export interface Database {
           default_price_range?: number | null
         }
       }
+      
+      // New table for tracking shared date sets
+      shared_date_sets: {
+        Row: {
+          id: string
+          created_at: string
+          date_set_id: string
+          owner_id: string
+          shared_with_id: string
+          permission_level: "view" | "edit"
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          date_set_id: string
+          owner_id: string
+          shared_with_id: string
+          permission_level?: "view" | "edit"
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          date_set_id?: string
+          owner_id?: string
+          shared_with_id?: string
+          permission_level?: "view" | "edit"
+        }
+      }
+      
+      // New table for reviews
+      reviews: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          user_id: string
+          date_set_id: string
+          rating: number
+          comment: string | null
+          is_public: boolean
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          user_id: string
+          date_set_id: string
+          rating: number
+          comment?: string | null
+          is_public?: boolean
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          user_id?: string
+          date_set_id?: string
+          rating?: number
+          comment?: string | null
+          is_public?: boolean
+        }
+      }
+      
+      // New table for followers
+      followers: {
+        Row: {
+          id: string
+          created_at: string
+          follower_id: string
+          following_id: string
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          follower_id: string
+          following_id: string
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+        }
+      }
     }
   }
 }

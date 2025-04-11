@@ -16,6 +16,16 @@ export type DateSet = {
   user_id: string
 }
 
+export type SharedDateSet = {
+  id: string
+  date_set_id: string
+  owner_id: string
+  shared_with_id: string
+  permission_level: "view" | "edit"
+  created_at: string
+  date_set: DateSet
+}
+
 // Create a new date set
 export async function createDateSet(
   userId: string,
@@ -391,6 +401,207 @@ export async function updateDateSet(
   } catch (error) {
     console.error("Error updating date set:", error)
     return false
+  }
+}
+
+// NEW FUNCTIONS FOR SHARING
+
+// Share a date set with another user
+export async function shareDateSet(
+  dateSetId: string, 
+  ownerId: string, 
+  sharedWithId: string, 
+  permissionLevel: "view" | "edit" = "view"
+): Promise<boolean> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables")
+      return false
+    }
+
+    // Verify that the date set exists and belongs to the owner
+    const { data: dateSet, error: dateSetError } = await supabase
+      .from("date_sets")
+      .select("*")
+      .eq("id", dateSetId)
+      .eq("user_id", ownerId)
+      .single()
+
+    if (dateSetError || !dateSet) {
+      console.error("Error verifying date set ownership:", dateSetError)
+      return false
+    }
+
+    // Check if the shared_with user exists
+    const { data: sharedWithUser, error: userError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", sharedWithId)
+      .single()
+
+    if (userError || !sharedWithUser) {
+      console.error("Error finding user to share with:", userError)
+      return false
+    }
+
+    // Create the sharing record
+    const { error } = await supabase
+      .from("shared_date_sets")
+      .insert({
+        date_set_id: dateSetId,
+        owner_id: ownerId,
+        shared_with_id: sharedWithId,
+        permission_level: permissionLevel
+      })
+
+    if (error) {
+      // Check if it's a duplicate error
+      if (error.code === '23505') { // Unique constraint violation
+        // Update the existing sharing record instead
+        const { error: updateError } = await supabase
+          .from("shared_date_sets")
+          .update({ permission_level: permissionLevel })
+          .eq("date_set_id", dateSetId)
+          .eq("shared_with_id", sharedWithId)
+
+        if (updateError) {
+          console.error("Error updating sharing record:", updateError)
+          return false
+        }
+        return true
+      }
+      
+      console.error("Error sharing date set:", error)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error("Error in shareDateSet:", error)
+    return false
+  }
+}
+
+// Remove sharing of a date set with a user
+export async function unshareDateSet(
+  dateSetId: string,
+  ownerId: string,
+  sharedWithId: string
+): Promise<boolean> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables")
+      return false
+    }
+
+    const { error } = await supabase
+      .from("shared_date_sets")
+      .delete()
+      .eq("date_set_id", dateSetId)
+      .eq("owner_id", ownerId)
+      .eq("shared_with_id", sharedWithId)
+
+    if (error) {
+      console.error("Error unsharing date set:", error)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error("Error in unshareDateSet:", error)
+    return false
+  }
+}
+
+// Get all date sets shared with a user
+export async function getSharedWithMeDateSets(userId: string): Promise<SharedDateSet[]> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables")
+      return []
+    }
+
+    const { data, error } = await supabase
+      .from("shared_date_sets")
+      .select(`
+        *,
+        date_set:date_sets(*)
+      `)
+      .eq("shared_with_id", userId)
+
+    if (error) {
+      console.error("Error getting shared date sets:", error)
+      return []
+    }
+
+    return data.map(item => ({
+      ...item,
+      date_set: item.date_set as unknown as DateSet
+    })) as unknown as SharedDateSet[]
+  } catch (error) {
+    console.error("Error in getSharedWithMeDateSets:", error)
+    return []
+  }
+}
+
+// Get all users a date set is shared with
+export async function getDateSetSharedUsers(
+  dateSetId: string,
+  ownerId: string
+): Promise<{ id: string; full_name: string | null; permission_level: "view" | "edit" }[]> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables")
+      return []
+    }
+
+    // Verify ownership first
+    const { data: dateSet, error: dateSetError } = await supabase
+      .from("date_sets")
+      .select("id")
+      .eq("id", dateSetId)
+      .eq("user_id", ownerId)
+      .single()
+
+    if (dateSetError || !dateSet) {
+      console.error("Error verifying date set ownership:", dateSetError)
+      return []
+    }
+
+    // Get all shared users with their profile info
+    const { data, error } = await supabase
+      .from("shared_date_sets")
+      .select(`
+        shared_with_id,
+        permission_level,
+        shared_with:profiles!shared_date_sets_shared_with_id_fkey(id, full_name)
+      `)
+      .eq("date_set_id", dateSetId)
+      .eq("owner_id", ownerId)
+
+    if (error) {
+      console.error("Error getting shared users:", error)
+      return []
+    }
+
+    // Process the data safely using type assertion and optional chaining
+    return (data || []).map((item: any) => {
+      // Handle both potential data structures that might come back from Supabase
+      const sharedWith = item.shared_with;
+      
+      return {
+        id: typeof sharedWith === 'object' && sharedWith !== null 
+          ? sharedWith.id || item.shared_with_id
+          : item.shared_with_id,
+        full_name: typeof sharedWith === 'object' && sharedWith !== null
+          ? sharedWith.full_name
+          : null,
+        permission_level: item.permission_level as "view" | "edit"
+      };
+    });
+  } catch (error) {
+    console.error("Error in getDateSetSharedUsers:", error)
+    return []
   }
 }
 
