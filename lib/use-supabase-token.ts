@@ -10,6 +10,13 @@ export function useSupabaseToken() {
   useEffect(() => {
     async function getToken() {
       try {
+        if (!supabase) {
+          console.error("Supabase client not initialized")
+          setToken(null)
+          setLoading(false)
+          return
+        }
+        
         const { data, error } = await supabase.auth.getSession()
         
         if (error) {
@@ -30,14 +37,16 @@ export function useSupabaseToken() {
     getToken()
     
     // Set up listener for auth changes
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setToken(session?.access_token || null)
+    if (supabase) {
+      const { data: listener } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          setToken(session?.access_token || null)
+        }
+      )
+      
+      return () => {
+        listener?.subscription.unsubscribe()
       }
-    )
-    
-    return () => {
-      listener?.subscription.unsubscribe()
     }
   }, [])
   
