@@ -23,6 +23,8 @@ import { storeMockDateSet } from "@/app/actions/date-plans"
 import { getCurrentUser } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from "@/lib/supabase"
+import { createClient } from "@supabase/supabase-js"
+import type { Database } from "@/lib/database.types"
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -657,6 +659,93 @@ export async function saveDateSetWithUserIdAction(
     }
   } catch (error) {
     console.error("Error in saveDateSetWithUserIdAction:", error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Failed to save date set" 
+    }
+  }
+}
+
+export async function saveDateSetWithTokenAction(
+  title: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  places: PlaceResult[],
+  notes: string | undefined,
+  userId: string,
+  authToken: string
+) {
+  try {
+    console.log("Starting saveDateSetWithTokenAction with token");
+    
+    if (!userId || !authToken) {
+      return { 
+        success: false, 
+        error: "User ID and authentication token are required" 
+      }
+    }
+    
+    // Create a Supabase client with the provided token
+    const supabaseAdmin = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        }
+      }
+    )
+    
+    // Generate a unique ID for the date set
+    const id = uuidv4();
+    
+    // Prepare data for insert
+    const dataToInsert = {
+      id,
+      user_id: userId,
+      title,
+      date,
+      start_time: startTime,
+      end_time: endTime,
+      places,
+      share_id: `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      notes: notes || null,
+    }
+    
+    // Log the insert attempt
+    console.log("Attempting to insert date set with token auth:", {
+      id,
+      user_id: userId,
+      title,
+      date,
+      places_count: places.length
+    });
+    
+    // Insert using the token-authenticated client
+    const { data, error } = await supabaseAdmin
+      .from('date_sets')
+      .insert(dataToInsert)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("Failed to create date set:", {
+        error: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      return { success: false, error: `Failed to create date set: ${error.message}` }
+    }
+    
+    console.log("Successfully created date set with ID:", data.id);
+    return { success: true, dateSetId: data.id }
+    
+  } catch (error) {
+    console.error("Error in saveDateSetWithTokenAction:", error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : "Failed to save date set" 

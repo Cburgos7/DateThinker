@@ -21,12 +21,13 @@ import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { saveDateSetAction, saveDateSetWithUserIdAction } from "@/app/actions/date-sets"
+import { saveDateSetAction, saveDateSetWithUserIdAction, saveDateSetWithTokenAction } from "@/app/actions/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 import { refreshSession, robustGetUser } from "@/lib/supabase"
 import { useAuth } from "@/app/auth-context"
+import { useSupabaseToken } from "@/lib/use-supabase-token"
 
 const formSchema = z.object({
   title: z.string().min(1, "Please enter a title"),
@@ -49,6 +50,7 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const router = useRouter()
   const { refreshAuth, user, authStatus, lastAuthError } = useAuth()
+  const { token } = useSupabaseToken()
 
   // Log auth status on mount and when it changes
   useEffect(() => {
@@ -110,6 +112,18 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
       // Force a short delay to ensure auth is fully processed
       await new Promise(resolve => setTimeout(resolve, 100));
       
+      // Check if we have a token
+      if (!token) {
+        setErrorMessage("Authentication token not available. Please sign out and sign back in.")
+        toast({
+          title: "Authentication Error",
+          description: "No authentication token available. Please sign out and sign back in.",
+          variant: "destructive"
+        })
+        setIsSubmitting(false)
+        return
+      }
+      
       // Format the date to YYYY-MM-DD
       const dateObj = new Date(values.date)
       const formattedDate = dateObj.toISOString().split('T')[0]
@@ -135,14 +149,15 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
       }
 
       // Proceed with server action using direct user ID
-      const result = await saveDateSetWithUserIdAction(
+      const result = await saveDateSetWithTokenAction(
         values.title,
         formattedDate,
         values.startTime,
         values.endTime,
         places,
         values.notes,
-        userId
+        userId,
+        token
       )
 
       if (!result.success) {
