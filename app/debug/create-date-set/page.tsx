@@ -7,11 +7,16 @@ import { supabase } from '@/lib/supabase'
 import { useSupabaseToken } from '@/lib/use-supabase-token'
 import { v4 as uuidv4 } from 'uuid'
 
+interface ResponseState {
+  policies?: any;
+  // other properties
+}
+
 export default function CreateDateSetDebugPage() {
   const { user } = useAuth()
   const { token } = useSupabaseToken()
   const [loading, setLoading] = useState(false)
-  const [response, setResponse] = useState<any>(null)
+  const [response, setResponse] = useState<ResponseState | null>(null)
   const [error, setError] = useState<string | null>(null)
   
   const createTestDateSet = async () => {
@@ -36,7 +41,7 @@ export default function CreateDateSetDebugPage() {
       try {
         const { data: policies } = await supabase.rpc('get_policies_for_table', { table_name: 'date_sets' })
         console.log("Current policies:", policies)
-        setResponse(prev => ({ ...prev, policies }))
+        setResponse((prev: ResponseState) => ({ ...prev, policies }))
       } catch (policyError) {
         console.log("Could not check policies:", policyError)
       }
