@@ -1,29 +1,29 @@
 "use server"
 
-import { getCurrentUser } from "@/lib/supabase"
+import { getCurrentUser, getUserWithSubscription } from "@/lib/supabase"
 import { addToFavorites, removeFromFavorites, isInFavorites } from "@/lib/favorites"
 import type { PlaceResult } from "@/lib/search-utils"
 
 export async function toggleFavorite(place: PlaceResult): Promise<{ success: boolean; isFavorite: boolean }> {
-  const user = await getCurrentUser()
+  const userWithSubscription = await getUserWithSubscription()
 
-  if (!user) {
+  if (!userWithSubscription) {
     return { success: false, isFavorite: false }
   }
 
   // Check if user has premium access
-  if (user.subscription_status !== "premium" && user.subscription_status !== "lifetime") {
+  if (userWithSubscription.subscription_status !== "premium" && userWithSubscription.subscription_status !== "lifetime") {
     return { success: false, isFavorite: false }
   }
 
   try {
-    const isFavorite = await isInFavorites(user.id, place.id)
+    const isFavorite = await isInFavorites(userWithSubscription.id, place.id)
 
     if (isFavorite) {
-      await removeFromFavorites(user.id, place.id)
+      await removeFromFavorites(userWithSubscription.id, place.id)
       return { success: true, isFavorite: false }
     } else {
-      await addToFavorites(user.id, place)
+      await addToFavorites(userWithSubscription.id, place)
       return { success: true, isFavorite: true }
     }
   } catch (error) {

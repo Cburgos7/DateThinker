@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    caseSensitiveRoutes: false,
+  },
   async headers() {
     return [
       {
@@ -53,6 +56,31 @@ const nextConfig = {
   },
   images: {
     domains: ["images.unsplash.com"],
+  },
+  // Fix for case sensitivity issues with date-fns
+  webpack: (config) => {
+    // Add a resolve alias for date-fns to ensure consistent casing
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'date-fns': require.resolve('date-fns'),
+      'date-fns/locale': require.resolve('date-fns/locale'),
+    };
+    
+    // Remove the invalid caseSensitive property
+    // Instead, make sure all import paths use consistent casing
+    // Add wildcard aliases for any problematic paths
+    if (config.resolve.alias) {
+      // Add any key folders that might have case sensitivity issues
+      const appDir = require('path').resolve(__dirname, './app');
+      const componentsDir = require('path').resolve(__dirname, './components');
+      
+      config.resolve.alias['APP'] = appDir;
+      config.resolve.alias['app'] = appDir;
+      config.resolve.alias['COMPONENTS'] = componentsDir;
+      config.resolve.alias['components'] = componentsDir;
+    }
+    
+    return config;
   },
 }
 

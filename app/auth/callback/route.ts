@@ -27,10 +27,11 @@ export async function GET(request: NextRequest) {
   }
 
   if (code) {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-
     try {
+      // Create a Supabase client with the cookie store
+      const cookieStore = cookies()
+      const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+
       // Exchange the code for a session
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
@@ -50,9 +51,21 @@ export async function GET(request: NextRequest) {
         email: data.user.email,
       })
 
-      // IMPORTANT: Redirect to the next URL directly
-      // This ensures we don't go back to the login page
-      return NextResponse.redirect(new URL(next, requestUrl.origin))
+      // Make an explicit request to ensure the session is properly set in cookies
+      const { error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error("Error getting session after exchange:", sessionError)
+      } else {
+        console.log("Session successfully fetched and set in cookies")
+      }
+
+      // Create a response object to add specific headers if needed
+      const response = NextResponse.redirect(new URL(next, requestUrl.origin))
+      
+      // Set cache control headers to prevent caching of the authentication state
+      response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate')
+      
+      return response
     } catch (err) {
       console.error("Unexpected error in auth callback:", err)
       return NextResponse.redirect(new URL("/login?error=Unexpected+error", requestUrl.origin))

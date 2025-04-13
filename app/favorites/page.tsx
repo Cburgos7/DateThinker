@@ -1,7 +1,7 @@
 "use client"
 
 import { redirect } from "next/navigation"
-import { getCurrentUser } from "@/lib/supabase"
+import { getCurrentUser, getUserWithSubscription } from "@/lib/supabase"
 import { getUserFavorites } from "@/lib/favorites"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { useEffect, useState } from "react"
 
 export default function FavoritesPage() {
   const [user, setUser] = useState<any>(null)
+  const [userWithSubscription, setUserWithSubscription] = useState<any>(null)
   const [favorites, setFavorites] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -23,7 +24,14 @@ export default function FavoritesPage() {
         }
         setUser(currentUser)
         
-        if (currentUser.subscription_status === "premium" || currentUser.subscription_status === "lifetime") {
+        const currentUserWithSubscription = await getUserWithSubscription()
+        if (!currentUserWithSubscription) {
+          redirect("/login?redirect=/favorites")
+        }
+        setUserWithSubscription(currentUserWithSubscription)
+        
+        if (currentUserWithSubscription.subscription_status === "premium" || 
+            currentUserWithSubscription.subscription_status === "lifetime") {
           const userFavorites = await getUserFavorites(currentUser.id)
           setFavorites(userFavorites)
         }
@@ -42,12 +50,13 @@ export default function FavoritesPage() {
     return <div>Loading...</div>
   }
 
-  if (!user) {
+  if (!user || !userWithSubscription) {
     return null
   }
 
   // Check if user has premium access
-  if (user.subscription_status !== "premium" && user.subscription_status !== "lifetime") {
+  if (userWithSubscription.subscription_status !== "premium" && 
+      userWithSubscription.subscription_status !== "lifetime") {
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-3xl mx-auto">

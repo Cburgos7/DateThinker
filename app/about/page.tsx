@@ -8,8 +8,8 @@ export default async function AboutPage() {
     <>
       <Header 
         isLoggedIn={!!user} 
-        userName={user?.full_name || undefined}
-        avatarUrl={user?.avatar_url || undefined}
+        userName={user?.user_metadata?.full_name || user?.email || undefined}
+        avatarUrl={user?.user_metadata?.avatar_url || undefined}
       />
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <h1 className="text-4xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">
