@@ -6,10 +6,18 @@ import Link from 'next/link'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
+import { Check, X, Calendar, Clock, Crown, Users, Trash2, Share2 } from 'lucide-react'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { toast } from '@/components/ui/use-toast'
+import { getSharedWithMeDateSets, shareDateSet, deleteDateSet, removeSharedDateSet } from '@/lib/date-sets'
+import { Badge } from '@/components/ui/badge'
+import { ShareDateDialog } from '@/components/share-date-dialog'
 
 // Extremely simplified page that just shows the data
 export default function MyDatesPage() {
   const [dateSets, setDateSets] = useState<any[]>([])
+  const [sharedDateSets, setSharedDateSets] = useState<any[]>([])
+  const [acceptedSharedSets, setAcceptedSharedSets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
@@ -64,6 +72,22 @@ export default function MyDatesPage() {
           console.log("BASIC LOADER: No date sets found for user");
           // Not setting an error here, just showing empty state
         }
+
+        // Fetch date sets shared with the current user
+        try {
+          const sharedSets = await getSharedWithMeDateSets(user.id);
+          console.log("BASIC LOADER: Shared date sets", sharedSets.length);
+          
+          // Split shared sets between pending and accepted
+          const pendingShares = sharedSets.filter(set => set.status === 'pending');
+          const acceptedShares = sharedSets.filter(set => set.status === 'accepted');
+          
+          setSharedDateSets(pendingShares);
+          setAcceptedSharedSets(acceptedShares);
+        } catch (sharedError) {
+          console.error("Error fetching shared date sets:", sharedError);
+          // Don't set the main error, just log it
+        }
       } catch (err) {
         console.error("Unexpected error:", err);
         setError(String(err));
@@ -74,6 +98,127 @@ export default function MyDatesPage() {
     
     fetchData();
   }, []);
+
+  const handleAcceptInvitation = async (sharedDateSet: any) => {
+    try {
+      // Update the status to accepted
+      const success = await shareDateSet(
+        sharedDateSet.date_set_id,
+        sharedDateSet.owner_id,
+        user.id,
+        'view',
+        'accepted'
+      );
+      
+      if (!success) {
+        throw new Error("Failed to accept invitation");
+      }
+      
+      // Move from pending to accepted
+      setSharedDateSets(prev => prev.filter(ds => ds.id !== sharedDateSet.id));
+      setAcceptedSharedSets(prev => [...prev, { ...sharedDateSet, status: 'accepted' }]);
+      
+      toast({
+        title: "Date plan accepted",
+        description: "The date plan has been added to your collection",
+      });
+    } catch (error) {
+      console.error("Error accepting invitation:", error);
+      toast({
+        title: "Error",
+        description: "Failed to accept the date plan",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeclineInvitation = async (sharedDateSet: any) => {
+    try {
+      if (!supabase || !user) return;
+      
+      // Remove the sharing permission
+      const success = await shareDateSet(
+        sharedDateSet.date_set_id,
+        sharedDateSet.owner_id,
+        user.id,
+        'view',
+        'declined'
+      );
+      
+      if (!success) {
+        throw new Error("Failed to decline invitation");
+      }
+      
+      // Remove from the displayed list
+      setSharedDateSets(prev => prev.filter(ds => ds.id !== sharedDateSet.id));
+      
+      toast({
+        title: "Date plan declined",
+        description: "The date plan invitation was declined",
+      });
+    } catch (error) {
+      console.error("Error declining invitation:", error);
+      toast({
+        title: "Error",
+        description: "Failed to decline the date plan",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const handleDeleteDateSet = async (dateSetId: string) => {
+    try {
+      if (!user) return;
+      
+      // Only the owner can delete a date set
+      const success = await deleteDateSet(dateSetId, user.id);
+      
+      if (success) {
+        setDateSets(prev => prev.filter(ds => ds.id !== dateSetId));
+        
+        toast({
+          title: "Date plan deleted",
+          description: "The date plan has been permanently deleted",
+        });
+      } else {
+        throw new Error("Failed to delete date plan");
+      }
+    } catch (error) {
+      console.error("Error deleting date plan:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete the date plan",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const handleRemoveSharedDate = async (dateSetId: string) => {
+    try {
+      if (!user) return;
+      
+      // Followers can remove a shared date without deleting it
+      const success = await removeSharedDateSet(dateSetId, user.id);
+      
+      if (success) {
+        setAcceptedSharedSets(prev => prev.filter(ds => ds.date_set_id !== dateSetId));
+        
+        toast({
+          title: "Shared date plan removed",
+          description: "The shared date plan has been removed from your collection",
+        });
+      } else {
+        throw new Error("Failed to remove shared date plan");
+      }
+    } catch (error) {
+      console.error("Error removing shared date plan:", error);
+      toast({
+        title: "Error",
+        description: "Failed to remove the shared date plan",
+        variant: "destructive"
+      });
+    }
+  };
 
   // Basic rendering with minimal styling
   return (
@@ -96,35 +241,197 @@ export default function MyDatesPage() {
             </div>
           </div>
         )}
-        
-        {!loading && !error && user && dateSets.length === 0 && (
-          <p className="p-4 bg-yellow-100 rounded mb-4">You don't have any date sets yet</p>
-        )}
-        
-        {dateSets.length > 0 && (
-          <div className="p-4 bg-green-100 rounded mb-4">
-            <p>Found {dateSets.length} date sets</p>
+
+        {/* Shared date sets (invitations) section */}
+        {!loading && !error && user && sharedDateSets.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Date Plan Invitations</h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {sharedDateSets.map(sharedSet => {
+                const dateSet = sharedSet.date_set;
+                return (
+                  <Card key={sharedSet.id} className="border-blue-200 bg-blue-50">
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-lg">{dateSet.title || 'Untitled'}</CardTitle>
+                        <Badge variant="outline" className="bg-blue-100">Invitation</Badge>
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent className="pb-2">
+                      <p className="text-sm text-gray-600 mb-2">
+                        {dateSet.date && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(dateSet.date).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                      
+                      {dateSet.start_time && dateSet.end_time && (
+                        <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {dateSet.start_time} - {dateSet.end_time}
+                        </p>
+                      )}
+                      
+                      <p className="text-sm text-gray-600">
+                        {dateSet.places?.length || 0} location(s)
+                      </p>
+                    </CardContent>
+                    
+                    <CardFooter className="flex justify-between pt-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="border-green-400 text-green-700"
+                        onClick={() => handleAcceptInvitation(sharedSet)}
+                      >
+                        <Check className="h-4 w-4 mr-1" />
+                        Accept
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="border-red-400 text-red-700"
+                        onClick={() => handleDeclineInvitation(sharedSet)}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Decline
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         )}
         
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {dateSets.map(ds => (
-            <div key={ds.id} className="border rounded-lg p-4 bg-white shadow-sm">
-              <h2 className="text-xl font-bold">{ds.title || 'Untitled'}</h2>
-              <p className="text-gray-500">{ds.date || 'No date'}</p>
-              
-              {ds.start_time && ds.end_time && (
-                <p className="mt-2">Time: {ds.start_time} - {ds.end_time}</p>
-              )}
-              
-              <div className="mt-4 flex justify-end">
-                <Link href={`/date-plans/${ds.id}`}>
-                  <Button>View Details</Button>
-                </Link>
-              </div>
+        {!loading && !error && user && dateSets.length === 0 && sharedDateSets.length === 0 && acceptedSharedSets.length === 0 && (
+          <p className="p-4 bg-yellow-100 rounded mb-4">You don't have any date sets yet</p>
+        )}
+        
+        {/* User's owned date sets section */}
+        {dateSets.length > 0 && (
+          <>
+            <h2 className="text-xl font-semibold mb-4">Your Date Plans</h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {dateSets.map(ds => (
+                <Card key={ds.id} className="border-purple-200 bg-white shadow-sm">
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                      <CardTitle className="text-lg">{ds.title || 'Untitled'}</CardTitle>
+                      <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300">
+                        <Crown className="h-3 w-3 mr-1" /> Date Leader
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  
+                  <CardContent className="pb-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      {ds.date && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(ds.date).toLocaleDateString()}
+                        </span>
+                      )}
+                    </p>
+                    
+                    {ds.start_time && ds.end_time && (
+                      <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {ds.start_time} - {ds.end_time}
+                      </p>
+                    )}
+                  </CardContent>
+                  
+                  <CardFooter className="pt-2 flex justify-between">
+                    <Link href={`/date-plans/${ds.id}`} className="w-full mr-2">
+                      <Button className="w-full">View</Button>
+                    </Link>
+                    <div className="flex gap-2">
+                      <ShareDateDialog 
+                        dateSetId={ds.id}
+                        shareId={ds.share_id}
+                        userId={user.id}
+                      >
+                        <Button variant="outline" size="icon">
+                          <Share2 className="h-4 w-4" />
+                        </Button>
+                      </ShareDateDialog>
+                      
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        className="border-red-200 text-red-600 hover:bg-red-50"
+                        onClick={() => handleDeleteDateSet(ds.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardFooter>
+                </Card>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
+        
+        {/* Shared dates that the user has accepted */}
+        {acceptedSharedSets.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-xl font-semibold mb-4">Shared With You</h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {acceptedSharedSets.map(sharedSet => {
+                const dateSet = sharedSet.date_set;
+                return (
+                  <Card key={sharedSet.id} className="border-blue-200 bg-white shadow-sm">
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-lg">{dateSet.title || 'Untitled'}</CardTitle>
+                        <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                          <Users className="h-3 w-3 mr-1" /> Date Follower
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent className="pb-2">
+                      <p className="text-sm text-gray-600 mb-2">
+                        {dateSet.date && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(dateSet.date).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                      
+                      {dateSet.start_time && dateSet.end_time && (
+                        <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {dateSet.start_time} - {dateSet.end_time}
+                        </p>
+                      )}
+                    </CardContent>
+                    
+                    <CardFooter className="pt-2 flex justify-between">
+                      <Link href={`/date-plans/${dateSet.id}`} className="w-full mr-2">
+                        <Button className="w-full">View</Button>
+                      </Link>
+                      
+                      <Button 
+                        variant="outline" 
+                        size="icon"
+                        className="border-red-200 text-red-600 hover:bg-red-50"
+                        onClick={() => handleRemoveSharedDate(dateSet.id)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <Footer />
     </>
