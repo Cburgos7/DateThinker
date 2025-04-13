@@ -35,7 +35,7 @@ const formSchema = z.object({
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirectTo')
+  const redirectTo = searchParams?.get('redirectTo') || null
   const [isLoading, setIsLoading] = useState(false)
   const [storedRedirect, setStoredRedirect] = useState<string | null>(null)
   
@@ -59,6 +59,10 @@ export default function LoginPage() {
     setIsLoading(true)
     
     try {
+      if (!supabase) {
+        throw new Error("Supabase client not initialized");
+      }
+      
       // Authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,

@@ -485,7 +485,13 @@ export async function shareDateSet(
       .upsert(shareRecord)
 
     if (error) {
-      console.error("Error creating/updating sharing record:", error)
+      console.error("Error creating/updating sharing record:", error);
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
       return false
     }
 

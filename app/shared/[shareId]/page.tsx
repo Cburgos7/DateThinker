@@ -63,7 +63,7 @@ export default function SharedDatePage() {
     }
     
     checkAuth();
-  }, [user, supabase, router]);
+  }, [user, router]);
 
   // Handle authentication requirement for accepting dates
   useEffect(() => {
@@ -90,13 +90,25 @@ export default function SharedDatePage() {
       
       // For invitation acceptance, we need to pass the current user's ID
       // as the sharedWithId since they're accepting it
-      const success = await shareDateSet(
+      let success = await shareDateSet(
         dateSet.id,
         user.id, // The current user who is accepting the invitation
         user.id, // This is the user being shared with (the recipient)
         "view",
         "accepted" // Explicitly mark as accepted
       );
+      
+      // If the first attempt fails, try with the actual owner ID
+      if (!success) {
+        console.log("First attempt failed, trying with actual owner ID");
+        success = await shareDateSet(
+          dateSet.id,
+          dateSet.user_id, // Use the actual owner's ID
+          user.id,
+          "view",
+          "accepted"
+        );
+      }
       
       if (success) {
         // Also update the status in shared_date_sets if needed
