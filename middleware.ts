@@ -23,37 +23,62 @@ export async function middleware(request: NextRequest) {
       return res
     }
     
-    // Create the middleware client with explicit URL and anon key
-    const supabase = createMiddlewareClient(
-      { req: request, res },
-      {
-        supabaseUrl,
-        supabaseKey,
-      }
-    )
-    
-    // This will refresh the session if it exists and persist it to the cookie
-    // This is key for server actions to work properly
-    await supabase.auth.getSession()
-    
+    // Get the pathname for route checking
     const pathname = request.nextUrl.pathname
     
-    // Check auth status again after potentially refreshing the token
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    // If user is logged in and on the login page, redirect to home
-    if (session && pathname.startsWith('/login')) {
-      return NextResponse.redirect(new URL('/', request.url))
+    // IMPORTANT: Don't block assets and API routes
+    const isAssetRoute = pathname.startsWith('/_next') || 
+                        pathname.includes('/favicon.ico') ||
+                        pathname.includes('.') ||
+                        pathname.startsWith('/api/');
+                        
+    if (isAssetRoute) {
+      return res;
     }
     
-    // If user is not logged in but on a protected page, redirect to login
-    if (!session && (pathname.startsWith('/account') || pathname.startsWith('/favorites') || pathname.startsWith('/my-dates'))) {
-      const redirectUrl = new URL('/login', request.url)
-      redirectUrl.searchParams.set('redirect', pathname)
-      return NextResponse.redirect(redirectUrl)
+    // Check if this is a protected route that requires authentication
+    const protectedPaths = ['/account', '/favorites', '/my-dates', '/date-plans']
+    const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path))
+    
+    // Only do auth checks if it's worth doing
+    if (isProtectedPath || pathname.startsWith('/login')) {
+      try {
+        // Create the middleware client
+        const supabase = createMiddlewareClient(
+          { req: request, res },
+          {
+            supabaseUrl,
+            supabaseKey,
+          }
+        )
+        
+        // Get and refresh the session
+        const { data } = await supabase.auth.getSession()
+        let session = data.session
+        
+        // Debug information
+        console.log(`AUTH CHECK: Path ${pathname}, Session exists: ${!!session}, User: ${session?.user?.id || 'none'}`)
+        
+        // Handle login redirect if user is already logged in
+        if (session && pathname.startsWith('/login')) {
+          console.log('Redirecting from login to home (user is logged in)')
+          return NextResponse.redirect(new URL('/', request.url))
+        }
+        
+        // Handle protected routes when user is not logged in
+        if (!session && isProtectedPath) {
+          console.log(`Redirecting to login from protected path: ${pathname}`)
+          const redirectUrl = new URL('/login', request.url)
+          redirectUrl.searchParams.set('redirect', pathname)
+          return NextResponse.redirect(redirectUrl)
+        }
+      } catch (authError) {
+        console.error('Auth error in middleware:', authError)
+        // Continue on auth error - don't block the request
+      }
     }
     
-    // Return the response with the refreshed cookie
+    // Continue with the request for non-protected routes
     return res
   } catch (error) {
     console.error('Middleware error:', error)
@@ -67,10 +92,11 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/login', 
-    '/account/:path*', 
-    '/favorites/:path*', 
-    '/my-dates/:path*',
+    '/account/:path*',
+    '/favorites/:path*',
+    // Remove date-plans from middleware protection for now until we fix the auth
+    // '/date-plans/:path*',
     '/api/:path*',
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api|my-dates|date-plans).*)',
   ]
 } 

@@ -11,29 +11,103 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Share2, Clock, MapPin, Edit, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { updateDateSetAction } from '@/app/actions/date-sets'
+import Link from 'next/link'
 
 interface DateSetCardProps {
-  dateSet: DateSet
-  onUpdate?: (updatedDateSet: DateSet) => void
+  dateSet: any; // Using any for maximum compatibility with different formats
+  onUpdate?: (updatedDateSet: any) => void;
 }
 
 export function DateSetCard({ dateSet, onUpdate }: DateSetCardProps) {
   const [isEditing, setIsEditing] = useState(false)
-  const [startTime, setStartTime] = useState(dateSet.start_time)
-  const [endTime, setEndTime] = useState(dateSet.end_time)
+  const [startTime, setStartTime] = useState(dateSet?.start_time || '')
+  const [endTime, setEndTime] = useState(dateSet?.end_time || '')
   const [isSaving, setIsSaving] = useState(false)
   const [shareUrl, setShareUrl] = useState('')
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false)
 
-  // Calculate total time in minutes
-  const totalMinutes = differenceInMinutes(
-    parseISO(`2000-01-01T${endTime}`),
-    parseISO(`2000-01-01T${startTime}`)
-  )
+  // Advanced debug output to help diagnose issues
+  console.log("========== DATE SET CARD RENDERING ==========");
+  console.log("DateSet object:", dateSet);
+  console.log("DateSet keys:", Object.keys(dateSet || {}));
+  console.log("Missing required fields:", [
+    'id', 'title', 'date', 'start_time', 'end_time', 'places'
+  ].filter(prop => dateSet?.[prop] === undefined));
+  console.log("Places type:", typeof dateSet?.places);
+  console.log("==============================================");
   
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  const totalTimeDisplay = `${hours}h ${minutes}m`
+  // Safety check for null/undefined dateSet
+  if (!dateSet) {
+    console.error("DateSetCard received null or undefined dateSet");
+    return (
+      <Card className="w-full h-full flex flex-col bg-red-50">
+        <CardHeader>
+          <CardTitle>Error: Invalid Date Set Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>This date set cannot be displayed due to invalid data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  
+  // Parse places if it's a JSON string
+  let places;
+  try {
+    // Log the raw places data for debugging
+    console.log("Raw places data:", {
+      value: dateSet.places,
+      type: typeof dateSet.places,
+      isArray: Array.isArray(dateSet.places),
+      isEmpty: !dateSet.places || dateSet.places.length === 0
+    });
+    
+    if (typeof dateSet.places === 'string') {
+      try {
+        places = JSON.parse(dateSet.places);
+      } catch (e) {
+        console.error("Failed to parse places JSON:", e);
+        places = [];
+      }
+    } else if (Array.isArray(dateSet.places)) {
+      places = dateSet.places;
+    } else {
+      console.log("Places is neither string nor array, defaulting to empty array");
+      places = [];
+    }
+  } catch (error) {
+    console.error("Error parsing places data:", error);
+    places = [];
+  }
+  
+  // Format date safely
+  let formattedDate;
+  try {
+    formattedDate = dateSet.date 
+      ? format(new Date(dateSet.date), 'MMMM d, yyyy')
+      : 'No date specified';
+  } catch (error) {
+    console.error("Error formatting date:", error);
+    formattedDate = 'Invalid date';
+  }
+
+  // Calculate total time in minutes safely
+  let totalTimeDisplay = '';
+  try {
+    if (startTime && endTime) {
+      const totalMinutes = differenceInMinutes(
+        parseISO(`2000-01-01T${endTime}`),
+        parseISO(`2000-01-01T${startTime}`)
+      );
+      
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      totalTimeDisplay = `${hours}h ${minutes}m`;
+    }
+  } catch (error) {
+    console.error("Error calculating time difference:", error);
+    totalTimeDisplay = 'Duration unavailable';
+  }
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -77,100 +151,72 @@ export function DateSetCard({ dateSet, onUpdate }: DateSetCardProps) {
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader>
+    <Card className="w-full h-full flex flex-col">
+      <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <div>
-            <CardTitle>{dateSet.title}</CardTitle>
-            <CardDescription>
-              {format(new Date(dateSet.date), 'MMMM d, yyyy')}
-            </CardDescription>
+            <CardTitle>{dateSet.title || 'Untitled Date Set'}</CardTitle>
+            <p className="text-sm text-gray-500">{formattedDate}</p>
           </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm" onClick={handleShare}>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/date-plans/${dateSet.id}`}>
               <Share2 className="h-4 w-4 mr-1" />
-              Share
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setIsEditing(!isEditing)}
-            >
-              {isEditing ? <X className="h-4 w-4 mr-1" /> : <Edit className="h-4 w-4 mr-1" />}
-              {isEditing ? 'Cancel' : 'Edit'}
-            </Button>
-          </div>
+              View
+            </Link>
+          </Button>
         </div>
       </CardHeader>
-      <CardContent>
-        {isEditing ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="startTime">Start Time</Label>
-                <Input
-                  id="startTime"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="endTime">End Time</Label>
-                <Input
-                  id="endTime"
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                />
-              </div>
-            </div>
-            <Button 
-              className="w-full" 
-              onClick={handleSave} 
-              disabled={isSaving}
-            >
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
+      <CardContent className="flex-grow">
+        <div className="space-y-4">
+          {dateSet.start_time && dateSet.end_time && (
             <div className="flex items-center text-sm text-gray-600">
               <Clock className="h-4 w-4 mr-1" />
-              <span>{startTime} - {endTime}</span>
-              <span className="ml-2 font-medium">({totalTimeDisplay})</span>
+              <span>{dateSet.start_time} - {dateSet.end_time}</span>
             </div>
-            
+          )}
+          
+          {places && places.length > 0 && (
             <div className="space-y-2">
               <h3 className="font-medium">Locations</h3>
               <div className="space-y-2">
-                {dateSet.places.map((place) => (
-                  <div key={place.id} className="flex items-start">
+                {places.slice(0, 1).map((place: any, index: number) => (
+                  <div key={place.id || place.name || index} className="flex items-start">
                     <MapPin className="h-4 w-4 mr-1 mt-0.5 text-gray-500" />
                     <div>
-                      <p className="font-medium">{place.name}</p>
-                      <p className="text-sm text-gray-600">{place.address}</p>
-                      {place.rating && (
-                        <p className="text-sm text-gray-500">Rating: {place.rating}</p>
-                      )}
+                      <p className="font-medium">{place.name || 'Unnamed Location'}</p>
+                      <p className="text-sm text-gray-600">{place.address || 'No address'}</p>
                     </div>
                   </div>
                 ))}
+                {places.length > 1 && (
+                  <p className="text-sm text-gray-500">And {places.length - 1} more locations...</p>
+                )}
               </div>
             </div>
-            
-            {dateSet.notes && (
-              <div className="space-y-1">
-                <h3 className="font-medium">Notes</h3>
-                <p className="text-sm text-gray-600">{dateSet.notes}</p>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+          
+          {dateSet.notes && (
+            <div className="space-y-1">
+              <h3 className="font-medium">Notes</h3>
+              <p className="text-sm text-gray-600">
+                {dateSet.notes.length > 100 ? 
+                  `${dateSet.notes.substring(0, 100)}...` : 
+                  dateSet.notes
+                }
+              </p>
+            </div>
+          )}
+          
+          {(!dateSet.start_time || !dateSet.end_time) && (!places || places.length === 0) && !dateSet.notes && (
+            <div className="text-center py-2">
+              <p className="text-sm text-gray-500">No additional details available</p>
+            </div>
+          )}
+        </div>
       </CardContent>
       <CardFooter>
         <Button asChild className="w-full">
-          <a href={`/date-plans/${dateSet.id}`}>View Details</a>
+          <Link href={`/date-plans/${dateSet.id}`}>View Details</Link>
         </Button>
       </CardFooter>
 

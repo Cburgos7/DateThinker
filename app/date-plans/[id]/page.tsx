@@ -1,17 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { getDatePlan } from "@/app/actions/date-plans"
-import { DatePlan } from "@/lib/types"
-import { DateSetCard } from '@/components/date-set-card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Calendar, Clock, MapPin, Info } from 'lucide-react'
 import Link from 'next/link'
-import { toast } from 'sonner'
-import { PlaceResult } from '@/lib/search-utils'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { supabase } from '@/lib/supabase'
+import { format } from 'date-fns'
 import { use } from 'react'
 
 interface DatePlanPageProps {
@@ -21,32 +19,89 @@ interface DatePlanPageProps {
 }
 
 export default function DatePlanPage({ params }: DatePlanPageProps) {
+  // Properly unwrap the params Promise using React.use()
   const resolvedParams = use(params)
-  const [datePlan, setDatePlan] = useState<DatePlan | null>(null)
+  const id = resolvedParams.id
+  
+  const [datePlan, setDatePlan] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadDatePlan() {
       try {
-        const plan = await getDatePlan(resolvedParams.id)
-        if (plan) {
-          setDatePlan(plan)
-        } else {
-          setError('Date plan not found')
-          toast.error('Date plan not found')
+        console.log("DETAIL PAGE: Loading date plan", id);
+        
+        if (!supabase) {
+          console.error("Supabase client not initialized");
+          setError("Database connection unavailable");
+          setLoading(false);
+          return;
         }
+        
+        // First, get the current user
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          console.log("DETAIL PAGE: No authenticated user found");
+          setError("Please log in to view this date plan");
+          setLoading(false);
+          return;
+        }
+        
+        console.log("DETAIL PAGE: Fetching date plan for user", user.id);
+        
+        // Query directly from date_sets table
+        const { data, error: fetchError } = await supabase
+          .from('date_sets')
+          .select('*')
+          .eq('id', id)
+          .single();
+        
+        console.log("DETAIL PAGE: Query result", { 
+          success: !fetchError, 
+          dataFound: !!data 
+        });
+        
+        if (fetchError) {
+          console.error("Error fetching date plan:", fetchError);
+          setError(fetchError.message);
+          setLoading(false);
+          return;
+        }
+        
+        if (!data) {
+          console.log("DETAIL PAGE: Date plan not found");
+          setError("Date plan not found");
+          setLoading(false);
+          return;
+        }
+        
+        // Make sure places is an array
+        let places = data.places || [];
+        if (typeof places === 'string') {
+          try {
+            places = JSON.parse(places);
+          } catch (e) {
+            console.error("Error parsing places:", e);
+            places = [];
+          }
+        }
+        
+        data.places = Array.isArray(places) ? places : [];
+        console.log("DETAIL PAGE: Setting date plan data", { id: data.id, places: data.places.length });
+        
+        setDatePlan(data);
       } catch (err) {
-        setError('An unexpected error occurred')
-        toast.error('An unexpected error occurred')
-        console.error('Error loading date plan:', err)
+        console.error("Unexpected error loading date plan:", err);
+        setError(`An unexpected error occurred: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
 
-    loadDatePlan()
-  }, [resolvedParams.id])
+    loadDatePlan();
+  }, [id]); // Keep using the unwrapped id
 
   if (loading) {
     return (
@@ -66,7 +121,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
         </main>
         <Footer />
       </>
-    )
+    );
   }
 
   if (error || !datePlan) {
@@ -88,41 +143,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
         </main>
         <Footer />
       </>
-    )
-  }
-
-  // Convert DatePlan to DateSet format for the DateSetCard component
-  const dateSet = {
-    id: datePlan.id,
-    title: datePlan.title,
-    date: new Date().toISOString().split('T')[0], // Default to today if no date
-    start_time: '12:00', // Default start time
-    end_time: '14:00', // Default end time
-    places: datePlan.activities.map(activity => {
-      // Extract address and rating from description
-      const addressMatch = activity.description.match(/^([^ -]+)/);
-      const ratingMatch = activity.description.match(/Rating: ([\d.]+)/);
-      
-      const address = addressMatch ? addressMatch[1] : '';
-      const rating = ratingMatch ? parseFloat(ratingMatch[1]) : 0;
-      
-      return {
-        id: `place-${Math.random().toString(36).substring(2, 9)}`,
-        name: activity.name,
-        address: address,
-        rating: rating,
-        price: 2, // Default price level (moderate)
-        isOutdoor: false,
-        photoUrl: '',
-        openNow: true,
-        category: 'restaurant',
-        placeId: `place-${Math.random().toString(36).substring(2, 9)}`
-      } as PlaceResult;
-    }),
-    share_id: `share-${datePlan.id}`,
-    notes: datePlan.description,
-    created_at: datePlan.created_at,
-    user_id: datePlan.user_id
+    );
   }
 
   return (
@@ -138,10 +159,74 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
           </Link>
         </div>
         
-        <DateSetCard dateSet={dateSet} />
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-2xl">{datePlan.title || 'Untitled Date Plan'}</CardTitle>
+            <div className="flex items-center text-gray-600 mt-1">
+              <Calendar className="h-4 w-4 mr-1" />
+              <span>{datePlan.date ? format(new Date(datePlan.date), 'MMMM d, yyyy') : 'No date specified'}</span>
+            </div>
+            {datePlan.start_time && datePlan.end_time && (
+              <div className="flex items-center text-gray-600 mt-1">
+                <Clock className="h-4 w-4 mr-1" />
+                <span>{datePlan.start_time} - {datePlan.end_time}</span>
+              </div>
+            )}
+          </CardHeader>
+          
+          <CardContent>
+            {datePlan.notes && (
+              <div className="mb-6">
+                <h3 className="text-lg font-medium mb-2 flex items-center">
+                  <Info className="h-4 w-4 mr-1" />
+                  Notes
+                </h3>
+                <p className="text-gray-600 whitespace-pre-wrap">{datePlan.notes}</p>
+              </div>
+            )}
+            
+            {datePlan.places && datePlan.places.length > 0 && (
+              <div>
+                <h3 className="text-lg font-medium mb-3 flex items-center">
+                  <MapPin className="h-4 w-4 mr-1" />
+                  Locations
+                </h3>
+                <div className="space-y-4">
+                  {datePlan.places.map((place: any, index: number) => (
+                    <div key={place.id || index} className="p-4 border rounded-lg bg-gray-50">
+                      <h4 className="font-medium">{place.name || 'Unnamed Location'}</h4>
+                      {place.address && <p className="text-gray-600 mt-1">{place.address}</p>}
+                      {place.category && <p className="text-sm text-gray-500 mt-1 capitalize">{place.category}</p>}
+                      {place.rating && (
+                        <div className="mt-2 flex items-center">
+                          <span className="text-sm font-medium">Rating: {place.rating}</span>
+                          <span className="ml-2 text-yellow-500">
+                            {'★'.repeat(Math.round(place.rating))}
+                            {'☆'.repeat(Math.max(0, 5 - Math.round(place.rating)))}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+          
+          <CardFooter>
+            <div className="text-xs text-gray-500">
+              Date Plan ID: {datePlan.id}
+              {datePlan.created_at && (
+                <span className="ml-2">
+                  • Created: {format(new Date(datePlan.created_at), 'MMM d, yyyy')}
+                </span>
+              )}
+            </div>
+          </CardFooter>
+        </Card>
       </main>
       <Footer />
     </>
-  )
+  );
 }
 

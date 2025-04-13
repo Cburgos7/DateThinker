@@ -1,6 +1,7 @@
 "use server"
 
 import { createServerActionClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from "next/headers"
 import {
   createDateSet,
@@ -23,7 +24,6 @@ import { storeMockDateSet } from "@/app/actions/date-plans"
 import { getCurrentUser } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
 import { supabase } from "@/lib/supabase"
-import { createClient } from "@supabase/supabase-js"
 import type { Database } from "@/lib/database.types"
 
 // Check if we're in development mode
@@ -749,6 +749,69 @@ export async function saveDateSetWithTokenAction(
     return { 
       success: false, 
       error: error instanceof Error ? error.message : "Failed to save date set" 
+    }
+  }
+}
+
+// Add this function to use a token-based approach for getting date sets
+export async function getUserDateSetsWithTokenAction(authToken: string) {
+  try {
+    console.log("Getting date sets with token authentication");
+    
+    if (!authToken) {
+      console.error("No auth token provided to getUserDateSetsWithTokenAction");
+      return { success: false, error: "Authentication token required" }
+    }
+    
+    // Create a client with the provided token
+    const supabaseWithToken = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        }
+      }
+    )
+    
+    // Get the user from the token
+    const { data: userData, error: userError } = await supabaseWithToken.auth.getUser()
+    
+    if (userError || !userData.user) {
+      console.error("Error getting user from token:", userError)
+      return { success: false, error: "Invalid authentication token" }
+    }
+    
+    const userId = userData.user.id
+    console.log("Getting date sets for user ID:", userId)
+    
+    // Get date sets using the token-authenticated client
+    const { data, error } = await supabaseWithToken
+      .from("date_sets")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+    
+    if (error) {
+      console.error("Error fetching date sets:", error)
+      return { success: false, error: "Failed to retrieve date sets", details: error.message }
+    }
+    
+    console.log("Retrieved date sets:", data?.length || 0, "Sample:", data?.[0]?.id)
+    
+    // IMPORTANT: Return dateSets property to match the format expected by component
+    return { 
+      success: true, 
+      dateSets: data || [],
+      data: data || [] // Include both forms for compatibility 
+    }
+  } catch (error) {
+    console.error("Error in getUserDateSetsWithTokenAction:", error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Failed to get date sets" 
     }
   }
 }
