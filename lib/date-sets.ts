@@ -22,6 +22,7 @@ export type SharedDateSet = {
   owner_id: string
   shared_with_id: string
   permission_level: "view" | "edit"
+  status: "pending" | "accepted" | "declined"
   created_at: string
   date_set: DateSet
 }
