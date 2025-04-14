@@ -27,6 +27,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  if (!token_hash) {
+    console.error("No token provided for email confirmation")
+    return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
+  }
+
   // Redirect the user to an error page if verification fails
   return NextResponse.redirect(new URL("/login?error=Invalid+or+expired+link", requestUrl.origin))
 }

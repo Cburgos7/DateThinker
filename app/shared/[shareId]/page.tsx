@@ -57,7 +57,7 @@ export default function SharedDatePage() {
         if (!data.session) {
           // Store the share URL to redirect back after login
           localStorage.setItem('redirectAfterLogin', window.location.href);
-          router.push('/login');
+          router.push('/auth');
         }
       }
     }
@@ -182,7 +182,7 @@ export default function SharedDatePage() {
 
   // Redirect to login when user clicks the login button
   const handleLoginRedirect = () => {
-    router.push('/login');
+    router.push('/auth');
   }
 
   if (isLoading) {
@@ -244,9 +244,9 @@ export default function SharedDatePage() {
               <div className="mb-8">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <h3 className="font-medium text-blue-700 mb-2">Login Required</h3>
-                  <p className="text-blue-600 mb-4">You need to login to view all details and accept this date plan.</p>
+                  <p className="text-blue-600 mb-4">You need to sign in to view all details and accept this date plan.</p>
                   <Button onClick={handleLoginRedirect} className="bg-blue-600 hover:bg-blue-700">
-                    Login to Continue
+                    Sign In
                   </Button>
                 </div>
               </div>

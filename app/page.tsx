@@ -304,7 +304,7 @@ export default function Page() {
   const handleToggleFavorite = async (place: PlaceResult) => {
     // If user is not logged in, redirect to login page
     if (!user) {
-      router.push("/login?redirect=/")
+      router.push("/auth?redirect=/")
       return
     }
 
@@ -335,7 +335,7 @@ export default function Page() {
   const handleSaveDatePlan = () => {
     // If user is not logged in, redirect to login page
     if (!user) {
-      router.push("/login?redirect=/")
+      router.push("/auth?redirect=/")
       return
     }
 

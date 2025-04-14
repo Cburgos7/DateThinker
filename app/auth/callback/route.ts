@@ -5,26 +5,24 @@ import type { NextRequest } from "next/server"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
-  const code = requestUrl.searchParams.get("code")
-  // Default to home page if no specific redirect is provided
-  const next = requestUrl.searchParams.get("next") || "/"
-  const error = requestUrl.searchParams.get("error")
-  const errorDescription = requestUrl.searchParams.get("error_description")
+  const params = requestUrl.searchParams
+  const error = params.get("error")
 
   console.log("Auth callback received with:", {
-    code: code ? "Present" : "Missing",
-    next,
-    error,
-    errorDescription,
+    error: error ? "Present" : "Missing",
     fullUrl: request.url,
   })
 
   if (error) {
-    console.error("OAuth error:", error, errorDescription)
+    console.error("Auth callback error:", error)
+    const errorDescription = params.get("error_description")
+    console.error("Error description:", errorDescription)
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(errorDescription || error)}`, requestUrl.origin),
+      new URL(`/auth?error=${encodeURIComponent(errorDescription || error)}`, requestUrl.origin),
     )
   }
+
+  const code = params.get("code")
 
   if (code) {
     try {
@@ -37,12 +35,12 @@ export async function GET(request: NextRequest) {
 
       if (error) {
         console.error("Error exchanging code for session:", error)
-        return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error.message)}`, requestUrl.origin))
+        return NextResponse.redirect(new URL(`/auth?error=${encodeURIComponent(error.message)}`, requestUrl.origin))
       }
 
       if (!data?.user) {
-        console.error("No user data returned from exchangeCodeForSession")
-        return NextResponse.redirect(new URL("/login?error=No+user+data+returned", requestUrl.origin))
+        console.error("No user data returned after code exchange")
+        return NextResponse.redirect(new URL("/auth?error=No+user+data+returned", requestUrl.origin))
       }
 
       // Log user data for debugging
@@ -59,20 +57,26 @@ export async function GET(request: NextRequest) {
         console.log("Session successfully fetched and set in cookies")
       }
 
-      // Create a response object to add specific headers if needed
-      const response = NextResponse.redirect(new URL(next, requestUrl.origin))
-      
-      // Set cache control headers to prevent caching of the authentication state
-      response.headers.set('Cache-Control', 'no-store, max-age=0, must-revalidate')
-      
-      return response
-    } catch (err) {
-      console.error("Unexpected error in auth callback:", err)
-      return NextResponse.redirect(new URL("/login?error=Unexpected+error", requestUrl.origin))
+      // Check if we have a redirect URL
+      const redirectTo = cookies().get("redirectOnLogin")?.value || "/my-dates"
+      console.log("Redirecting to:", redirectTo)
+
+      // Clear the redirect cookie
+      cookies().delete("redirectOnLogin")
+
+      if (redirectTo.startsWith("/")) {
+        return NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
+      } else {
+        // Use the raw URL if it's an external URL (should be validated before setting cookie)
+        return NextResponse.redirect(redirectTo)
+      }
+    } catch (error) {
+      console.error("Unexpected error in callback:", error)
+      return NextResponse.redirect(new URL("/auth?error=Unexpected+error", requestUrl.origin))
     }
   } else {
-    console.warn("Auth callback called without code parameter")
-    return NextResponse.redirect(new URL("/login?error=No+authorization+code", requestUrl.origin))
+    console.error("No authorization code provided in callback")
+    return NextResponse.redirect(new URL("/auth?error=No+authorization+code", requestUrl.origin))
   }
 }
 

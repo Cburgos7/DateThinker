@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { CheckCircle } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
+import { supabase } from "@/lib/supabase"
 
 export default function AccountPage() {
   const [user, setUser] = useState<any>(null)
@@ -22,18 +23,18 @@ export default function AccountPage() {
       try {
         const currentUser = await getCurrentUser()
         if (!currentUser) {
-          redirect("/login?redirect=/account")
+          redirect("/auth?redirect=/account")
         }
         setUser(currentUser)
         
         const currentUserWithSubscription = await getUserWithSubscription()
         if (!currentUserWithSubscription) {
-          redirect("/login?redirect=/account")
+          redirect("/auth?redirect=/account")
         }
         setUserWithSubscription(currentUserWithSubscription)
       } catch (error) {
         console.error("Error fetching user:", error)
-        redirect("/login?redirect=/account")
+        redirect("/auth?redirect=/account")
       } finally {
         setIsLoading(false)
       }

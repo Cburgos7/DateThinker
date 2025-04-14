@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { getCurrentUser, getUserWithSubscription, updateUserSubscription } from "@/lib/supabase"
 import { getOrCreateCustomer, createSubscriptionCheckout, createOneTimeCheckout } from "@/lib/stripe"
 import { getStripe } from "@/lib/stripe"
+import { supabase } from "@/lib/supabase"
 
 // Price IDs from your Stripe dashboard
 const SUBSCRIPTION_PRICE_ID = process.env.STRIPE_SUBSCRIPTION_PRICE_ID || ""
@@ -13,6 +14,13 @@ const LIFETIME_PRICE_ID = process.env.STRIPE_LIFETIME_PRICE_ID || ""
 export async function createMonthlySubscription(formData: FormData) {
   const user = await getCurrentUser()
   const userWithSubscription = await getUserWithSubscription()
+
+  // Validate the user is logged in
+  const session = await supabase.auth.getSession()
+  if (!session?.data?.session?.user) {
+    redirect("/auth?redirect=/pricing")
+    return { success: false, message: "Not authenticated" }
+  }
 
   if (!user) {
     redirect("/login?redirect=/pricing")
@@ -59,6 +67,13 @@ export async function createMonthlySubscription(formData: FormData) {
 export async function createLifetimeMembership(formData: FormData) {
   const user = await getCurrentUser()
   const userWithSubscription = await getUserWithSubscription()
+
+  // Validate the user is logged in
+  const session = await supabase.auth.getSession()
+  if (!session?.data?.session?.user) {
+    redirect("/auth?redirect=/pricing")
+    return { success: false, message: "Not authenticated" }
+  }
 
   if (!user) {
     redirect("/login?redirect=/pricing")
