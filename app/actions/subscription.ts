@@ -11,7 +11,7 @@ const SUBSCRIPTION_PRICE_ID = process.env.STRIPE_SUBSCRIPTION_PRICE_ID || ""
 const LIFETIME_PRICE_ID = process.env.STRIPE_LIFETIME_PRICE_ID || ""
 
 // Create a checkout session for monthly subscription
-export async function createMonthlySubscription(formData: FormData) {
+export async function createMonthlySubscription(formData: FormData): Promise<void> {
   const user = await getCurrentUser()
   const userWithSubscription = await getUserWithSubscription()
 
@@ -19,17 +19,15 @@ export async function createMonthlySubscription(formData: FormData) {
   if (!supabase) {
     console.error("Supabase client not initialized")
     redirect("/auth?redirect=/pricing")
-    return { success: false, message: "Not authenticated" }
   }
   
   const session = await supabase.auth.getSession()
   if (!session?.data?.session?.user) {
     redirect("/auth?redirect=/pricing")
-    return { success: false, message: "Not authenticated" }
   }
 
   if (!user) {
-    redirect("/login?redirect=/pricing")
+    redirect("/auth?redirect=/pricing")
   }
 
   // Get or create Stripe customer
@@ -70,7 +68,7 @@ export async function createMonthlySubscription(formData: FormData) {
 }
 
 // Create a checkout session for lifetime membership
-export async function createLifetimeMembership(formData: FormData) {
+export async function createLifetimeMembership(formData: FormData): Promise<void> {
   const user = await getCurrentUser()
   const userWithSubscription = await getUserWithSubscription()
 
@@ -78,17 +76,15 @@ export async function createLifetimeMembership(formData: FormData) {
   if (!supabase) {
     console.error("Supabase client not initialized")
     redirect("/auth?redirect=/pricing")
-    return { success: false, message: "Not authenticated" }
   }
   
   const session = await supabase.auth.getSession()
   if (!session?.data?.session?.user) {
     redirect("/auth?redirect=/pricing")
-    return { success: false, message: "Not authenticated" }
   }
 
   if (!user) {
-    redirect("/login?redirect=/pricing")
+    redirect("/auth?redirect=/pricing")
   }
 
   // Get or create Stripe customer
