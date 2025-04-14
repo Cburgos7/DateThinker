@@ -16,6 +16,12 @@ export async function createMonthlySubscription(formData: FormData) {
   const userWithSubscription = await getUserWithSubscription()
 
   // Validate the user is logged in
+  if (!supabase) {
+    console.error("Supabase client not initialized")
+    redirect("/auth?redirect=/pricing")
+    return { success: false, message: "Not authenticated" }
+  }
+  
   const session = await supabase.auth.getSession()
   if (!session?.data?.session?.user) {
     redirect("/auth?redirect=/pricing")
@@ -69,6 +75,12 @@ export async function createLifetimeMembership(formData: FormData) {
   const userWithSubscription = await getUserWithSubscription()
 
   // Validate the user is logged in
+  if (!supabase) {
+    console.error("Supabase client not initialized")
+    redirect("/auth?redirect=/pricing")
+    return { success: false, message: "Not authenticated" }
+  }
+  
   const session = await supabase.auth.getSession()
   if (!session?.data?.session?.user) {
     redirect("/auth?redirect=/pricing")

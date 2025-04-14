@@ -5,78 +5,52 @@ import type { NextRequest } from "next/server"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
-  const params = requestUrl.searchParams
-  const error = params.get("error")
+  const code = requestUrl.searchParams.get("code")
+  const error = requestUrl.searchParams.get("error")
+  const errorDescription = requestUrl.searchParams.get("error_description")
+  
+  // Default redirect location
+  const redirectTo = "/my-dates"
 
-  console.log("Auth callback received with:", {
-    error: error ? "Present" : "Missing",
-    fullUrl: request.url,
-  })
-
+  // Handle error case
   if (error) {
-    console.error("Auth callback error:", error)
-    const errorDescription = params.get("error_description")
-    console.error("Error description:", errorDescription)
+    console.error("Auth callback error:", error, errorDescription)
     return NextResponse.redirect(
-      new URL(`/auth?error=${encodeURIComponent(errorDescription || error)}`, requestUrl.origin),
+      new URL(`/auth?error=${encodeURIComponent(errorDescription || error)}`, requestUrl.origin)
     )
   }
 
-  const code = params.get("code")
-
-  if (code) {
-    try {
-      // Create a Supabase client with the cookie store
-      const cookieStore = cookies()
-      const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-
-      // Exchange the code for a session
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-      if (error) {
-        console.error("Error exchanging code for session:", error)
-        return NextResponse.redirect(new URL(`/auth?error=${encodeURIComponent(error.message)}`, requestUrl.origin))
-      }
-
-      if (!data?.user) {
-        console.error("No user data returned after code exchange")
-        return NextResponse.redirect(new URL("/auth?error=No+user+data+returned", requestUrl.origin))
-      }
-
-      // Log user data for debugging
-      console.log("Auth callback - User authenticated:", {
-        id: data.user.id,
-        email: data.user.email,
-      })
-
-      // Make an explicit request to ensure the session is properly set in cookies
-      const { error: sessionError } = await supabase.auth.getSession()
-      if (sessionError) {
-        console.error("Error getting session after exchange:", sessionError)
-      } else {
-        console.log("Session successfully fetched and set in cookies")
-      }
-
-      // Check if we have a redirect URL
-      const redirectTo = cookies().get("redirectOnLogin")?.value || "/my-dates"
-      console.log("Redirecting to:", redirectTo)
-
-      // Clear the redirect cookie
-      cookies().delete("redirectOnLogin")
-
-      if (redirectTo.startsWith("/")) {
-        return NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
-      } else {
-        // Use the raw URL if it's an external URL (should be validated before setting cookie)
-        return NextResponse.redirect(redirectTo)
-      }
-    } catch (error) {
-      console.error("Unexpected error in callback:", error)
-      return NextResponse.redirect(new URL("/auth?error=Unexpected+error", requestUrl.origin))
-    }
-  } else {
+  // Handle missing code
+  if (!code) {
     console.error("No authorization code provided in callback")
     return NextResponse.redirect(new URL("/auth?error=No+authorization+code", requestUrl.origin))
   }
-}
 
+  try {
+    // Create a Supabase client using the route handler pattern
+    const supabase = createRouteHandlerClient({ cookies })
+
+    // Exchange the code for a session
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (exchangeError) {
+      console.error("Error exchanging code for session:", exchangeError)
+      return NextResponse.redirect(
+        new URL(`/auth?error=${encodeURIComponent(exchangeError.message)}`, requestUrl.origin)
+      )
+    }
+
+    if (!data?.user) {
+      console.error("No user data returned from code exchange")
+      return NextResponse.redirect(new URL("/auth?error=No+user+data+returned", requestUrl.origin))
+    }
+
+    console.log("Successfully authenticated user:", data.user.email)
+    
+    // Redirect to home or dashboard after successful login
+    return NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
+  } catch (err) {
+    console.error("Unexpected error in auth callback:", err)
+    return NextResponse.redirect(new URL("/auth?error=Unexpected+error", requestUrl.origin))
+  }
+} 
