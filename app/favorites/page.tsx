@@ -20,13 +20,13 @@ export default function FavoritesPage() {
       try {
         const currentUser = await getCurrentUser()
         if (!currentUser) {
-          redirect("/login?redirect=/favorites")
+          redirect("/auth?redirect=/favorites")
         }
         setUser(currentUser)
         
         const currentUserWithSubscription = await getUserWithSubscription()
         if (!currentUserWithSubscription) {
-          redirect("/login?redirect=/favorites")
+          redirect("/auth?redirect=/favorites")
         }
         setUserWithSubscription(currentUserWithSubscription)
         
@@ -37,7 +37,7 @@ export default function FavoritesPage() {
         }
       } catch (error) {
         console.error("Error fetching data:", error)
-        redirect("/login?redirect=/favorites")
+        redirect("/auth?redirect=/favorites")
       } finally {
         setIsLoading(false)
       }
@@ -90,7 +90,7 @@ export default function FavoritesPage() {
           <div className="text-center py-12">
             <p className="text-muted-foreground mb-4">You haven't saved any favorites yet.</p>
             <Button
-              onClick={() => redirect("/")}
+              onClick={() => window.location.href = "/"}
               className="bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
             >
               Find Date Ideas
@@ -153,5 +153,4 @@ export default function FavoritesPage() {
       </div>
     </div>
   )
-}
-
+} 

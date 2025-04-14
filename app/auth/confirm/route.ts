@@ -8,26 +8,38 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const token_hash = requestUrl.searchParams.get("token_hash")
   const type = requestUrl.searchParams.get("type") as EmailOtpType | null
-  const next = requestUrl.searchParams.get("next") ?? "/"
+
+  // Handle missing token
+  if (!token_hash) {
+    console.error("No token provided for email confirmation")
+    return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
+  }
 
   if (token_hash && type) {
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    try {
+      // Create Supabase client using the route handler pattern
+      const supabase = createRouteHandlerClient({ cookies })
 
-    const { error } = await supabase.auth.verifyOtp({
-      type,
-      token_hash,
-    })
+      // Verify OTP token
+      const { error } = await supabase.auth.verifyOtp({
+        type,
+        token_hash,
+      })
 
-    if (!error) {
-      // Redirect user to the specified redirect URL or root of app
+      if (error) {
+        console.error("Error verifying OTP:", error)
+        return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
+      }
+
+      // If successful, redirect to success page
       return NextResponse.redirect(new URL("/confirmation-success", requestUrl.origin))
-    } else {
-      console.error("Error verifying OTP:", error)
+    } catch (err) {
+      console.error("Unexpected error in email verification:", err)
+      return NextResponse.redirect(new URL("/auth?error=Verification+failed", requestUrl.origin))
     }
   }
 
-  // Redirect the user to an error page if verification fails
-  return NextResponse.redirect(new URL("/login?error=Invalid+or+expired+link", requestUrl.origin))
+  // Fallback error redirect
+  return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
 }
 

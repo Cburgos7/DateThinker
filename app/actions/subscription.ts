@@ -4,18 +4,30 @@ import { redirect } from "next/navigation"
 import { getCurrentUser, getUserWithSubscription, updateUserSubscription } from "@/lib/supabase"
 import { getOrCreateCustomer, createSubscriptionCheckout, createOneTimeCheckout } from "@/lib/stripe"
 import { getStripe } from "@/lib/stripe"
+import { supabase } from "@/lib/supabase"
 
 // Price IDs from your Stripe dashboard
 const SUBSCRIPTION_PRICE_ID = process.env.STRIPE_SUBSCRIPTION_PRICE_ID || ""
 const LIFETIME_PRICE_ID = process.env.STRIPE_LIFETIME_PRICE_ID || ""
 
 // Create a checkout session for monthly subscription
-export async function createMonthlySubscription(formData: FormData) {
+export async function createMonthlySubscription(formData: FormData): Promise<void> {
   const user = await getCurrentUser()
   const userWithSubscription = await getUserWithSubscription()
 
+  // Validate the user is logged in
+  if (!supabase) {
+    console.error("Supabase client not initialized")
+    redirect("/auth?redirect=/pricing")
+  }
+  
+  const session = await supabase.auth.getSession()
+  if (!session?.data?.session?.user) {
+    redirect("/auth?redirect=/pricing")
+  }
+
   if (!user) {
-    redirect("/login?redirect=/pricing")
+    redirect("/auth?redirect=/pricing")
   }
 
   // Get or create Stripe customer
@@ -56,12 +68,23 @@ export async function createMonthlySubscription(formData: FormData) {
 }
 
 // Create a checkout session for lifetime membership
-export async function createLifetimeMembership(formData: FormData) {
+export async function createLifetimeMembership(formData: FormData): Promise<void> {
   const user = await getCurrentUser()
   const userWithSubscription = await getUserWithSubscription()
 
+  // Validate the user is logged in
+  if (!supabase) {
+    console.error("Supabase client not initialized")
+    redirect("/auth?redirect=/pricing")
+  }
+  
+  const session = await supabase.auth.getSession()
+  if (!session?.data?.session?.user) {
+    redirect("/auth?redirect=/pricing")
+  }
+
   if (!user) {
-    redirect("/login?redirect=/pricing")
+    redirect("/auth?redirect=/pricing")
   }
 
   // Get or create Stripe customer

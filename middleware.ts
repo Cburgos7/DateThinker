@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
     const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path))
     
     // Only do auth checks if it's worth doing
-    if (isProtectedPath || pathname.startsWith('/login')) {
+    if (isProtectedPath || pathname.startsWith('/auth')) {
       try {
         // Create the middleware client
         const supabase = createMiddlewareClient(
@@ -60,15 +60,15 @@ export async function middleware(request: NextRequest) {
         console.log(`AUTH CHECK: Path ${pathname}, Session exists: ${!!session}, User: ${session?.user?.id || 'none'}`)
         
         // Handle login redirect if user is already logged in
-        if (session && pathname.startsWith('/login')) {
-          console.log('Redirecting from login to home (user is logged in)')
+        if (session && pathname.startsWith('/auth')) {
+          console.log('Redirecting from auth to home (user is logged in)')
           return NextResponse.redirect(new URL('/', request.url))
         }
         
         // Handle protected routes when user is not logged in
         if (!session && isProtectedPath) {
-          console.log(`Redirecting to login from protected path: ${pathname}`)
-          const redirectUrl = new URL('/login', request.url)
+          console.log(`Redirecting to auth from protected path: ${pathname}`)
+          const redirectUrl = new URL('/auth', request.url)
           redirectUrl.searchParams.set('redirect', pathname)
           return NextResponse.redirect(redirectUrl)
         }
@@ -91,7 +91,7 @@ export async function middleware(request: NextRequest) {
 // Include server action routes to ensure auth is properly handled
 export const config = {
   matcher: [
-    '/login', 
+    '/auth', 
     '/account/:path*',
     '/favorites/:path*',
     // Remove date-plans from middleware protection for now until we fix the auth

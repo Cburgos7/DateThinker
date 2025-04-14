@@ -25,7 +25,7 @@ export default function ConfirmationSuccessPage() {
             </p>
           </CardContent>
           <CardFooter className="flex justify-center gap-4">
-            <Link href="/login">
+            <Link href="/auth">
               <Button className="bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90 flex items-center gap-2">
                 <LogIn className="h-4 w-4" />
                 Sign In
