@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Calendar, Clock, MapPin, Info } from 'lucide-react'
+import { ArrowLeft, Calendar, Clock, MapPin, Info, Share2, Link as LinkIcon, Mail, Copy, UserPlus, Check } from 'lucide-react'
 import Link from 'next/link'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
@@ -11,6 +11,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { use } from 'react'
+import { ShareDateDialog } from '@/components/share-date-dialog'
 
 interface DatePlanPageProps {
   params: Promise<{
@@ -26,6 +27,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
   const [datePlan, setDatePlan] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
     async function loadDatePlan() {
@@ -41,6 +43,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
         
         // First, get the current user
         const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
         
         if (!user) {
           console.log("DETAIL PAGE: No authenticated user found");
@@ -150,13 +153,21 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
     <>
       <Header />
       <main className="container mx-auto py-8">
-        <div className="mb-6">
+        <div className="mb-6 flex justify-between items-center">
           <Link href="/my-dates">
             <Button variant="outline" size="sm">
               <ArrowLeft className="h-4 w-4 mr-1" />
               Back to My Dates
             </Button>
           </Link>
+          
+          {datePlan && user && (
+            <ShareDateDialog 
+              dateSetId={datePlan.id} 
+              shareId={datePlan.share_id} 
+              userId={user.id} 
+            />
+          )}
         </div>
         
         <Card className="mb-6">

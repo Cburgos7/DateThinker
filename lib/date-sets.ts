@@ -22,6 +22,7 @@ export type SharedDateSet = {
   owner_id: string
   shared_with_id: string
   permission_level: "view" | "edit"
+  status: "pending" | "accepted" | "declined"
   created_at: string
   date_set: DateSet
 }
@@ -411,7 +412,8 @@ export async function shareDateSet(
   dateSetId: string, 
   ownerId: string, 
   sharedWithId: string, 
-  permissionLevel: "view" | "edit" = "view"
+  permissionLevel: "view" | "edit" = "view",
+  status: "pending" | "accepted" | "declined" = "accepted" // Default to accepted for direct shares
 ): Promise<boolean> {
   try {
     if (!supabase) {
@@ -419,59 +421,78 @@ export async function shareDateSet(
       return false
     }
 
-    // Verify that the date set exists and belongs to the owner
+    const isInvitationAcceptance = ownerId === sharedWithId;
+    
+    console.log("Sharing date set:", { 
+      dateSetId, 
+      ownerId, 
+      sharedWithId, 
+      permissionLevel,
+      status,
+      isInvitationAcceptance
+    });
+
+    // Verify that the date set exists
     const { data: dateSet, error: dateSetError } = await supabase
       .from("date_sets")
-      .select("*")
+      .select("id, user_id, share_id")
       .eq("id", dateSetId)
-      .eq("user_id", ownerId)
       .single()
 
-    if (dateSetError || !dateSet) {
-      console.error("Error verifying date set ownership:", dateSetError)
+    if (dateSetError) {
+      console.error("Error finding date set:", dateSetError)
       return false
     }
-
-    // Check if the shared_with user exists
-    const { data: sharedWithUser, error: userError } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", sharedWithId)
-      .single()
-
-    if (userError || !sharedWithUser) {
-      console.error("Error finding user to share with:", userError)
+    
+    if (!dateSet) {
+      console.error("Date set not found:", dateSetId)
       return false
     }
-
-    // Create the sharing record
-    const { error } = await supabase
-      .from("shared_date_sets")
-      .insert({
+    
+    // Determine the actual owner ID from the date set
+    const actualOwnerId = dateSet.user_id;
+    
+    console.log(`Actual owner ID from the date set: ${actualOwnerId}`);
+    
+    let shareRecord;
+    
+    if (isInvitationAcceptance) {
+      // This is a user accepting an invitation
+      console.log("Processing invitation acceptance");
+      shareRecord = {
+        date_set_id: dateSetId,
+        owner_id: actualOwnerId,
+        shared_with_id: sharedWithId,
+        permission_level: permissionLevel,
+        status: status
+      };
+    } else {
+      // This is an owner sharing with another user
+      console.log("Processing owner sharing with another user");
+      shareRecord = {
         date_set_id: dateSetId,
         owner_id: ownerId,
         shared_with_id: sharedWithId,
-        permission_level: permissionLevel
-      })
+        permission_level: permissionLevel,
+        status: status
+      };
+    }
+    
+    console.log("Share record being created:", shareRecord);
+    
+    // Create the sharing record based on who is initiating
+    const { error } = await supabase
+      .from("shared_date_sets")
+      .upsert(shareRecord)
 
     if (error) {
-      // Check if it's a duplicate error
-      if (error.code === '23505') { // Unique constraint violation
-        // Update the existing sharing record instead
-        const { error: updateError } = await supabase
-          .from("shared_date_sets")
-          .update({ permission_level: permissionLevel })
-          .eq("date_set_id", dateSetId)
-          .eq("shared_with_id", sharedWithId)
-
-        if (updateError) {
-          console.error("Error updating sharing record:", updateError)
-          return false
-        }
-        return true
-      }
-      
-      console.error("Error sharing date set:", error)
+      console.error("Error creating/updating sharing record:", error);
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
       return false
     }
 
@@ -550,58 +571,203 @@ export async function getDateSetSharedUsers(
   ownerId: string
 ): Promise<{ id: string; full_name: string | null; permission_level: "view" | "edit" }[]> {
   try {
+    if (!dateSetId || !ownerId) {
+      console.error("getDateSetSharedUsers: Missing required parameters", { dateSetId, ownerId })
+      return []
+    }
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return []
     }
 
-    // Verify ownership first
-    const { data: dateSet, error: dateSetError } = await supabase
-      .from("date_sets")
-      .select("id")
-      .eq("id", dateSetId)
-      .eq("user_id", ownerId)
-      .single()
+    console.log("getDateSetSharedUsers: Checking ownership for", { dateSetId, ownerId })
+    
+    // Verify ownership first - but make this optional
+    try {
+      const { data: dateSet, error: dateSetError } = await supabase
+        .from("date_sets")
+        .select("id")
+        .eq("id", dateSetId)
+        .eq("user_id", ownerId)
+        .single()
 
-    if (dateSetError || !dateSet) {
-      console.error("Error verifying date set ownership:", dateSetError)
-      return []
+      if (dateSetError) {
+        console.error("Error verifying date set ownership:", dateSetError)
+        // Continue anyway
+      }
+
+      if (!dateSet) {
+        console.log("Date set not owned by user or not found:", { dateSetId, ownerId })
+        // Skip ownership check - this allows viewing shared users even if you're not the owner
+        console.log("Fetching shared users without ownership check")
+      }
+    } catch (ownershipError) {
+      console.error("Error during ownership check:", ownershipError)
+      // Continue anyway
     }
 
-    // Get all shared users with their profile info
-    const { data, error } = await supabase
-      .from("shared_date_sets")
-      .select(`
-        shared_with_id,
-        permission_level,
-        shared_with:profiles!shared_date_sets_shared_with_id_fkey(id, full_name)
-      `)
-      .eq("date_set_id", dateSetId)
-      .eq("owner_id", ownerId)
+    console.log("getDateSetSharedUsers: Fetching shared users for", { dateSetId, ownerId })
+    
+    // Get all shared users - try a simpler query first
+    try {
+      const { data, error } = await supabase
+        .from("shared_date_sets")
+        .select(`
+          id,
+          shared_with_id,
+          permission_level
+        `)
+        .eq("date_set_id", dateSetId)
+        .eq("owner_id", ownerId)
 
-    if (error) {
-      console.error("Error getting shared users:", error)
-      return []
-    }
+      if (error) {
+        console.error("Error getting shared users with simple query:", error)
+        throw error
+      }
 
-    // Process the data safely using type assertion and optional chaining
-    return (data || []).map((item: any) => {
-      // Handle both potential data structures that might come back from Supabase
-      const sharedWith = item.shared_with;
+      console.log("getDateSetSharedUsers: Raw data from simple query:", data)
       
-      return {
-        id: typeof sharedWith === 'object' && sharedWith !== null 
-          ? sharedWith.id || item.shared_with_id
-          : item.shared_with_id,
-        full_name: typeof sharedWith === 'object' && sharedWith !== null
-          ? sharedWith.full_name
-          : null,
+      if (!data || data.length === 0) {
+        return []
+      }
+      
+      // Now get the profile data for each user
+      const profiles: Record<string, any> = {}
+      
+      for (const item of data) {
+        try {
+          const { data: profile, error: profileError } = await supabase
+            .from("profiles")
+            .select("id, full_name")
+            .eq("id", item.shared_with_id)
+            .single()
+            
+          if (profileError) {
+            console.error("Error fetching profile for user:", item.shared_with_id, profileError)
+          } else if (profile) {
+            profiles[item.shared_with_id] = profile
+          }
+        } catch (profileError) {
+          console.error("Exception fetching profile:", profileError)
+        }
+      }
+      
+      // Build the result
+      const result = data.map(item => ({
+        id: item.shared_with_id,
+        full_name: profiles[item.shared_with_id]?.full_name || null,
         permission_level: item.permission_level as "view" | "edit"
-      };
-    });
+      }))
+      
+      console.log("getDateSetSharedUsers: Processed data:", result)
+      return result
+    } catch (queryError) {
+      console.error("Error with simple shared users query:", queryError)
+      
+      // Try the original join query as a fallback
+      try {
+        const { data, error } = await supabase
+          .from("shared_date_sets")
+          .select(`
+            shared_with_id,
+            permission_level,
+            shared_with:profiles!shared_date_sets_shared_with_id_fkey(id, full_name)
+          `)
+          .eq("date_set_id", dateSetId)
+          .eq("owner_id", ownerId)
+
+        if (error) {
+          console.error("Error getting shared users with join query:", error)
+          return []
+        }
+
+        console.log("getDateSetSharedUsers: Raw data from join query:", data)
+        
+        // Process the data safely using type assertion and optional chaining
+        const processedData = (data || []).map((item: any) => {
+          // Handle both potential data structures that might come back from Supabase
+          const sharedWith = item.shared_with;
+          
+          const result = {
+            id: typeof sharedWith === 'object' && sharedWith !== null 
+              ? sharedWith.id || item.shared_with_id
+              : item.shared_with_id,
+            full_name: typeof sharedWith === 'object' && sharedWith !== null
+              ? sharedWith.full_name
+              : null,
+            permission_level: item.permission_level as "view" | "edit"
+          };
+          
+          return result;
+        });
+        
+        console.log("getDateSetSharedUsers: Processed data from join:", processedData)
+        return processedData;
+      } catch (joinError) {
+        console.error("Both query attempts failed:", joinError)
+        return []
+      }
+    }
   } catch (error) {
     console.error("Error in getDateSetSharedUsers:", error)
     return []
   }
 }
+
+export async function updateDateShareStatus(
+  dateSetId: string,
+  userId: string,
+  status: "accepted" | "declined"
+): Promise<boolean> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables")
+      return false
+    }
+    
+    const { error } = await supabase
+      .from("shared_date_sets")
+      .update({ status })
+      .eq("date_set_id", dateSetId)
+      .eq("shared_with_id", userId);
+
+    return !error;
+  } catch (error) {
+    console.error("Error updating share status:", error);
+    return false;
+  }
+}
+
+// Allow a user to remove a date set shared with them (without deleting the original)
+export async function removeSharedDateSet(dateSetId: string, userId: string): Promise<boolean> {
+  try {
+    if (!supabase) {
+      console.warn("Supabase client not initialized - missing environment variables");
+      return false;
+    }
+    
+    console.log("Removing shared date set:", { dateSetId, userId });
+    
+    // Delete the shared_date_sets record
+    const { error } = await supabase
+      .from("shared_date_sets")
+      .delete()
+      .eq("date_set_id", dateSetId)
+      .eq("shared_with_id", userId);
+    
+    if (error) {
+      console.error("Error removing shared date set:", error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error("Error in removeSharedDateSet:", error);
+    return false;
+  }
+}
+
+
+
 

@@ -1,30 +1,37 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
-import { getDateSetById } from "@/lib/date-sets"
+import { getDateSetByShareId, shareDateSet, updateDateShareStatus } from "@/lib/date-sets"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { MapPin, Calendar, Clock, Utensils, Coffee, Wine, Star } from "lucide-react"
+import { MapPin, Calendar, Clock, Utensils, Coffee, Wine, Star, Check, X } from "lucide-react"
 import { getCurrentUser } from "@/lib/supabase"
+import { generateGoogleCalendarLink, generateICalEvent } from "@/lib/date-sets"
+import { toast } from "@/components/ui/use-toast"
 import Image from "next/image"
+import { supabase } from "@/lib/supabase"
 
 export default function SharedDatePage() {
   const params = useParams()
+  const router = useRouter()
   const shareId = params?.shareId as string || ""
   const [dateSet, setDateSet] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
+  const [acceptStatus, setAcceptStatus] = useState<'pending' | 'accepted' | 'declined' | null>(null)
+  const [isAddingToCalendar, setIsAddingToCalendar] = useState(false)
+  const [needsAuthentication, setNeedsAuthentication] = useState(false)
 
   useEffect(() => {
     async function loadData() {
       try {
         const [currentUser, dateSetData] = await Promise.all([
           getCurrentUser(),
-          getDateSetById(shareId),
+          getDateSetByShareId(shareId),
         ])
 
         setUser(currentUser)
@@ -42,6 +49,141 @@ export default function SharedDatePage() {
       setIsLoading(false)
     }
   }, [shareId])
+
+  useEffect(() => {
+    async function checkAuth() {
+      if (!user && supabase) {
+        const { data } = await supabase.auth.getSession();
+        if (!data.session) {
+          // Store the share URL to redirect back after login
+          localStorage.setItem('redirectAfterLogin', window.location.href);
+          router.push('/login');
+        }
+      }
+    }
+    
+    checkAuth();
+  }, [user, router]);
+
+  // Handle authentication requirement for accepting dates
+  useEffect(() => {
+    // Only run after initial loading completes
+    if (!isLoading && !user && dateSet) {
+      // Store the current URL for redirect after login
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('redirectAfterLogin', window.location.href);
+      }
+      // Show a message about needing to login
+      setNeedsAuthentication(true);
+    }
+  }, [isLoading, user, dateSet]);
+
+  const handleAccept = async () => {
+    if (!user || !dateSet) return
+    
+    try {
+      console.log("Accepting date plan:", { 
+        dateSetId: dateSet.id, 
+        ownerId: dateSet.user_id, 
+        userId: user.id 
+      });
+      
+      // For invitation acceptance, we need to pass the current user's ID
+      // as the sharedWithId since they're accepting it
+      let success = await shareDateSet(
+        dateSet.id,
+        user.id, // The current user who is accepting the invitation
+        user.id, // This is the user being shared with (the recipient)
+        "view",
+        "accepted" // Explicitly mark as accepted
+      );
+      
+      // If the first attempt fails, try with the actual owner ID
+      if (!success) {
+        console.log("First attempt failed, trying with actual owner ID");
+        success = await shareDateSet(
+          dateSet.id,
+          dateSet.user_id, // Use the actual owner's ID
+          user.id,
+          "view",
+          "accepted"
+        );
+      }
+      
+      if (success) {
+        // Also update the status in shared_date_sets if needed
+        await updateDateShareStatus(dateSet.id, user.id, "accepted");
+        
+        setAcceptStatus('accepted');
+        toast({
+          title: "Date plan accepted",
+          description: "The date plan has been added to your dates",
+        });
+        
+        // Show calendar options
+        setIsAddingToCalendar(true);
+      } else {
+        throw new Error("Failed to accept date plan");
+      }
+    } catch (error) {
+      console.error("Error accepting date plan:", error);
+      toast({
+        title: "Error",
+        description: "Failed to accept the date plan. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!user || !dateSet) return;
+    
+    try {
+      // Update the status to declined
+      await updateDateShareStatus(dateSet.id, user.id, "declined");
+      
+      setAcceptStatus('declined');
+      toast({
+        title: "Date plan declined",
+        description: "The date plan invitation was declined",
+      });
+    } catch (error) {
+      console.error("Error declining date plan:", error);
+      toast({
+        title: "Error",
+        description: "Failed to decline the date plan",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleAddToGoogleCalendar = () => {
+    if (!dateSet) return
+    
+    const googleCalendarLink = generateGoogleCalendarLink(dateSet)
+    window.open(googleCalendarLink, '_blank')
+  }
+
+  const handleDownloadIcal = () => {
+    if (!dateSet) return
+    
+    const icalData = generateICalEvent(dateSet)
+    const blob = new Blob([icalData], { type: 'text/calendar' })
+    const url = URL.createObjectURL(blob)
+    
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${dateSet.title || 'date-plan'}.ics`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // Redirect to login when user clicks the login button
+  const handleLoginRedirect = () => {
+    router.push('/login');
+  }
 
   if (isLoading) {
     return (
@@ -78,7 +220,9 @@ export default function SharedDatePage() {
     )
   }
 
-  const { title, description, date, time, places } = dateSet
+  const { title, description, date, time, places, user_id } = dateSet
+  const isOwner = user && user.id === user_id
+  const canAccept = user && !isOwner && acceptStatus !== 'accepted'
 
   return (
     <>
@@ -95,6 +239,71 @@ export default function SharedDatePage() {
             </div>
 
             {description && <p className="text-gray-600 mb-8">{description}</p>}
+
+            {dateSet && !user && needsAuthentication && (
+              <div className="mb-8">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h3 className="font-medium text-blue-700 mb-2">Login Required</h3>
+                  <p className="text-blue-600 mb-4">You need to login to view all details and accept this date plan.</p>
+                  <Button onClick={handleLoginRedirect} className="bg-blue-600 hover:bg-blue-700">
+                    Login to Continue
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Invitation Action Buttons */}
+            {!isOwner && user && (
+              <div className="mb-8">
+                {acceptStatus === null && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <h3 className="font-medium text-blue-700 mb-2">You've received a date plan invitation</h3>
+                    <p className="text-blue-600 mb-4">Would you like to accept this date plan and add it to your collection?</p>
+                    <div className="flex gap-4">
+                      <Button onClick={handleAccept} className="bg-green-600 hover:bg-green-700">
+                        <Check className="mr-2 h-4 w-4" /> Accept
+                      </Button>
+                      <Button variant="outline" onClick={handleDecline}>
+                        <X className="mr-2 h-4 w-4" /> Decline
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {acceptStatus === 'accepted' && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <h3 className="font-medium text-green-700 mb-2">Date plan accepted!</h3>
+                    <p className="text-green-600 mb-2">This date plan has been added to your collection.</p>
+                    <Button variant="link" className="text-green-600 p-0" onClick={() => router.push('/my-dates')}>
+                      View in My Dates
+                    </Button>
+                  </div>
+                )}
+
+                {acceptStatus === 'declined' && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                    <h3 className="font-medium text-gray-700 mb-2">Date plan declined</h3>
+                    <p className="text-gray-600">You can still view the details, but it won't be added to your collection.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Calendar Integration */}
+            {(isAddingToCalendar || isOwner || acceptStatus === 'accepted') && (
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 mb-8">
+                <h3 className="font-medium text-violet-700 mb-2">Add to Calendar</h3>
+                <p className="text-violet-600 mb-4">Add this date plan to your personal calendar</p>
+                <div className="flex gap-4">
+                  <Button variant="outline" className="border-violet-300 text-violet-700" onClick={handleAddToGoogleCalendar}>
+                    <Calendar className="mr-2 h-4 w-4" /> Google Calendar
+                  </Button>
+                  <Button variant="outline" className="border-violet-300 text-violet-700" onClick={handleDownloadIcal}>
+                    <Calendar className="mr-2 h-4 w-4" /> Download .ics (Apple/Outlook)
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-4 mb-8">
               {date && (
