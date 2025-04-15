@@ -11,9 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { User, LogOut, AlertCircle, HeartHandshake } from "lucide-react"
+import { User, LogOut, AlertCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
-import { Button } from "@/components/ui/button"
 
 interface HeaderProps {
   isLoggedIn?: boolean
@@ -151,30 +150,6 @@ export function Header({ isLoggedIn = false, userName, avatarUrl }: HeaderProps)
         </Link>
 
         <div className="flex items-center gap-4 sm:gap-8 py-1 sm:py-2">
-          {isAuthenticated ? (
-            <Button 
-              variant="ghost" 
-              className="gap-2 hover:bg-rose-50 hover:text-rose-600 font-medium"
-              onClick={() => {
-                // Direct navigation to avoid redirect loops
-                window.location.href = '/make-date';
-              }}
-            >
-              <HeartHandshake className="h-4 w-4 mr-2" />
-              <span>Make a Date</span>
-            </Button>
-          ) : (
-            <Button 
-              variant="ghost" 
-              className="gap-2 hover:bg-rose-50 hover:text-rose-600 font-medium"
-              onClick={() => {
-                window.location.href = '/auth?showForm=true&manualSignIn=true&redirectTo=/make-date';
-              }}
-            >
-              <HeartHandshake className="h-4 w-4 mr-2" />
-              <span>Make a Date</span>
-            </Button>
-          )}
           <Link href="/about" className="text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto">
             About
           </Link>
@@ -224,25 +199,18 @@ export function Header({ isLoggedIn = false, userName, avatarUrl }: HeaderProps)
                   <Link href="/favorites">Favorites</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut} data-testid="sign-out">
+                <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="h-4 w-4 mr-2" />
                   Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Link href="/auth?showForm=true&manualSignIn=true" className="px-4 py-2 border rounded hover:bg-gray-100 pointer-events-auto bg-rose-500 text-white hover:bg-rose-600">
+            <Link href="/auth" className="px-4 py-2 border rounded hover:bg-gray-100 pointer-events-auto bg-rose-500 text-white hover:bg-rose-600">
               Sign In/Up
             </Link>
           )}
         </div>
-
-        {/* User info for DOM-based auth detection */}
-        {isAuthenticated && (
-          <div style={{ display: 'none' }} data-testid="user-authenticated">
-            <span data-testid="user-name">{userData.name}</span>
-          </div>
-        )}
       </div>
 
       {/* Auth error message */}
