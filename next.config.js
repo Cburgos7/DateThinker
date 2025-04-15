@@ -35,7 +35,7 @@ const nextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pagead2.googlesyndication.com https://partner.googleadservices.com https://tpc.googlesyndication.com https://www.googletagservices.com https://www.google-analytics.com https://www.googleadservices.com https://adservice.google.com https://cdn.jsdelivr.net; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://images.unsplash.com https://www.google-analytics.com https://*.supabase.co; frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com;",
+              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pagead2.googlesyndication.com https://partner.googleadservices.com https://tpc.googlesyndication.com https://www.googletagservices.com https://www.google-analytics.com https://www.googleadservices.com https://adservice.google.com https://cdn.jsdelivr.net; img-src 'self' data: https: blob: https://placehold.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://images.unsplash.com https://www.google-analytics.com https://*.supabase.co https://placehold.co; frame-src 'self' https://googleads.g.doubleclick.net https://tpc.googlesyndication.com;",
           },
         ],
       },
@@ -55,7 +55,7 @@ const nextConfig = {
     ]
   },
   images: {
-    domains: ["images.unsplash.com"],
+    domains: ["images.unsplash.com", "placehold.co"],
   },
   // Fix for case sensitivity issues with date-fns
   webpack: (config) => {

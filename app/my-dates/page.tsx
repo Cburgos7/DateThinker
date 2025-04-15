@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { supabase } from '@/lib/supabase'
-import { Check, X, Calendar, Clock, Crown, Users, Trash2, Share2 } from 'lucide-react'
+import { Check, X, Calendar, Clock, Crown, Users, Trash2, Share2, LogIn } from 'lucide-react'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/components/ui/use-toast'
 import { getSharedWithMeDateSets, shareDateSet, deleteDateSet, removeSharedDateSet } from '@/lib/date-sets'
@@ -15,12 +16,14 @@ import { ShareDateDialog } from '@/components/share-date-dialog'
 
 // Extremely simplified page that just shows the data
 export default function MyDatesPage() {
+  const router = useRouter()
   const [dateSets, setDateSets] = useState<any[]>([])
   const [sharedDateSets, setSharedDateSets] = useState<any[]>([])
   const [acceptedSharedSets, setAcceptedSharedSets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
+  const [authChecked, setAuthChecked] = useState(false)
 
   // Super simplified data loading
   useEffect(() => {
@@ -31,17 +34,25 @@ export default function MyDatesPage() {
         if (!supabase) {
           console.error("Supabase client not initialized");
           setError("Database connection unavailable");
+          setLoading(false);
           return;
         }
         
         // First, get the current user
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
+        setAuthChecked(true);
         
         if (!user) {
           console.log("BASIC LOADER: No authenticated user found");
           setError("Please log in to view your date sets");
           setLoading(false);
+          
+          // Redirect to auth page after a short delay
+          setTimeout(() => {
+            router.push('/auth?redirect=/my-dates');
+          }, 2000);
+          
           return;
         }
         
@@ -97,7 +108,7 @@ export default function MyDatesPage() {
     };
     
     fetchData();
-  }, []);
+  }, [router]);
 
   const handleAcceptInvitation = async (sharedDateSet: any) => {
     try {
@@ -219,6 +230,31 @@ export default function MyDatesPage() {
       });
     }
   };
+
+  // Render auth prompt if no user is found
+  if (authChecked && !user) {
+    return (
+      <>
+        <Header />
+        <div className="container py-12 px-4 flex flex-col items-center justify-center min-h-[60vh]">
+          <div className="text-center max-w-md">
+            <LogIn className="h-12 w-12 text-rose-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold mb-2">Authentication Required</h1>
+            <p className="text-gray-600 mb-6">
+              You need to be signed in to view and create date plans. Please sign in or create an account.
+            </p>
+            <Button 
+              onClick={() => router.push('/auth?redirect=/my-dates')}
+              className="bg-rose-500 hover:bg-rose-600"
+            >
+              Sign In or Sign Up
+            </Button>
+          </div>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 
   // Basic rendering with minimal styling
   return (

@@ -304,45 +304,63 @@ export async function refreshSession() {
   }
 }
 
-// A more robust way to get the user with multiple fallbacks
+// Enhanced function for more robust user retrieval that tries multiple approaches
 export async function robustGetUser(): Promise<any | null> {
   if (!supabase) {
-    console.warn("Supabase client not initialized");
+    console.error("robustGetUser: Supabase client not initialized");
     return null;
   }
 
   try {
-    // Try with getSession first
+    console.log("robustGetUser: Starting robust user retrieval");
+    
+    // First, try to get session directly - this is the fastest method
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError) {
-      console.warn("Error getting session:", sessionError.message);
+      console.error("robustGetUser: Error getting session:", sessionError);
     } else if (sessionData?.session?.user) {
+      console.log("robustGetUser: Found user via getSession:", sessionData.session.user.id);
       return sessionData.session.user;
+    } else {
+      console.log("robustGetUser: No session found via getSession");
     }
     
-    // If that fails, try with getUser
+    // If we don't have a user yet, try refreshing the session
+    console.log("robustGetUser: Attempting to refresh the session");
+    try {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      
+      if (refreshError) {
+        console.error("robustGetUser: Error refreshing session:", refreshError);
+      } else if (refreshData?.session?.user) {
+        console.log("robustGetUser: Found user via refreshSession:", refreshData.session.user.id);
+        return refreshData.session.user;
+      } else {
+        console.log("robustGetUser: No user found after session refresh");
+      }
+    } catch (refreshCatchError) {
+      console.error("robustGetUser: Exception during session refresh:", refreshCatchError);
+    }
+    
+    // Last attempt: Try getUser directly
+    console.log("robustGetUser: Final attempt using getUser");
     const { data: userData, error: userError } = await supabase.auth.getUser();
     
     if (userError) {
-      console.warn("Error getting user:", userError.message);
-    } else if (userData?.user) {
+      console.error("robustGetUser: Error getting user:", userError);
+      return null;
+    }
+    
+    if (userData?.user) {
+      console.log("robustGetUser: Found user via getUser:", userData.user.id);
       return userData.user;
     }
     
-    // As a last resort, try to refresh the session
-    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-    
-    if (refreshError) {
-      console.warn("Error refreshing session:", refreshError.message);
-    } else if (refreshData?.session?.user) {
-      return refreshData.session.user;
-    }
-    
-    console.warn("No user found after all attempts");
+    console.log("robustGetUser: No user found after all attempts");
     return null;
   } catch (error) {
-    console.error("Error in robustGetUser:", error);
+    console.error("robustGetUser: Unexpected error:", error);
     return null;
   }
 }
