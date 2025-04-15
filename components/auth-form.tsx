@@ -22,6 +22,8 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
   >("checking")
   const [retryCount, setRetryCount] = useState(0)
   const [envVarStatus, setEnvVarStatus] = useState<any>(null)
+  // Flag to track if form was manually submitted
+  const [manualSubmit, setManualSubmit] = useState(false)
 
   // Monitor network status
   useEffect(() => {
@@ -93,6 +95,8 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    // Set flag to indicate user manually submitted the form
+    setManualSubmit(true)
 
     // Check network status first
     if (networkStatus === "offline") {
@@ -119,7 +123,8 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
         }
       }, 5000)
 
-      const { error } = await supabase.auth.signInWithPassword({
+      // Sign in with Supabase - this will set the session cookie
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
@@ -128,8 +133,27 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
 
       if (error) throw error
 
-      router.push(redirectTo)
-      router.refresh()
+      console.log("Sign in successful, will redirect to:", redirectTo)
+      console.log("Session data:", data.session ? "Session exists" : "No session")
+      
+      // Verify the session was set properly
+      const { data: sessionCheck } = await supabase.auth.getSession()
+      console.log("Session verification:", sessionCheck.session ? "Valid session" : "No session found")
+      
+      // Set bypass flag to prevent middleware redirect loops
+      document.cookie = `bypass_auth_check=true; path=/; max-age=120`;
+      try {
+        localStorage.setItem('bypass_auth_check', 'true');
+        sessionStorage.setItem('bypass_auth_check', 'true');
+      } catch (e) {
+        console.error("Error setting storage bypass flags:", e);
+      }
+      
+      // Immediate redirect - don't show any checking screens
+      const redirectUrl = new URL(redirectTo, window.location.origin);
+      redirectUrl.searchParams.set('ts', Date.now().toString());
+      redirectUrl.searchParams.set('bypass_auth', 'true');
+      window.location.href = redirectUrl.toString();
     } catch (err: any) {
       console.error("Sign in error:", err)
 
@@ -196,8 +220,20 @@ export function AuthForm({ redirectTo = "/" }: { redirectTo?: string }) {
         throw new Error(signUpResult.error)
       }
 
-      // Show success message
-      router.push("/signup-confirmation")
+      // Instead of showing success message, redirect to the search page
+      console.log("Sign up successful, redirecting to search page");
+      
+      // Set bypass flag to prevent middleware redirect loops
+      document.cookie = `bypass_auth_check=true; path=/; max-age=120`;
+      try {
+        localStorage.setItem('bypass_auth_check', 'true');
+        sessionStorage.setItem('bypass_auth_check', 'true');
+      } catch (e) {
+        console.error("Error setting storage bypass flags:", e);
+      }
+      
+      // Redirect to search page
+      window.location.href = "/make-date?bypass_auth=true&ts=" + Date.now();
     } catch (err: any) {
       console.error("Sign up error:", err)
 
