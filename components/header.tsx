@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { User, LogOut, AlertCircle } from "lucide-react"
+import { User, LogOut, AlertCircle, Calendar } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
 interface HeaderProps {
@@ -150,6 +150,20 @@ export function Header({ isLoggedIn = false, userName, avatarUrl }: HeaderProps)
         </Link>
 
         <div className="flex items-center gap-4 sm:gap-8 py-1 sm:py-2">
+          {isAuthenticated && (
+            <>
+              <Link 
+                href="/make-date" 
+                className="flex items-center gap-1 text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto"
+              >
+                <Calendar className="h-4 w-4" />
+                <span>Make Date</span>
+              </Link>
+              <Link href="/my-dates" className="text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto">
+                My Dates
+              </Link>
+            </>
+          )}
           <Link href="/about" className="text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto">
             About
           </Link>
@@ -164,9 +178,6 @@ export function Header({ isLoggedIn = false, userName, avatarUrl }: HeaderProps)
             className="text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto"
           >
             Donate
-          </Link>
-          <Link href="/my-dates" className="text-sm text-gray-600 hover:text-rose-500 hover:underline pointer-events-auto">
-            My Dates
           </Link>
         </div>
 
