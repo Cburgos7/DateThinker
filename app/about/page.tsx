@@ -4,13 +4,10 @@ import { getCurrentUser } from "@/lib/supabase"
 
 export default async function AboutPage() {
   const user = await getCurrentUser()
+
   return (
     <>
-      <Header 
-        isLoggedIn={!!user} 
-        userName={user?.user_metadata?.full_name || user?.email || undefined}
-        avatarUrl={user?.user_metadata?.avatar_url || undefined}
-      />
+      <Header />
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <h1 className="text-4xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">
           About DateThinker

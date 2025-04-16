@@ -1,8 +1,7 @@
-"use server"
-
 import { createServerClient } from "@/lib/supabase/server"
 import { DatePlan } from "@/lib/types"
 import { DateSet } from "@/lib/date-sets"
+import { createClient } from "@/utils/supabase/client"
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -99,5 +98,29 @@ export async function storeMockDateSet(dateSet: DateSet): Promise<void> {
   if (isDevelopment) {
     console.log("Storing mock date set:", dateSet);
     mockDateSets[dateSet.id] = dateSet;
+  }
+}
+
+export async function getAllDatePlans() {
+  try {
+    const supabase = createClient()
+    
+    const { data, error } = await supabase
+      .from('date_plans')
+      .select('*')
+      .order('created_at', { ascending: false })
+    
+    if (error) {
+      console.error("Error fetching date plans:", error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, data }
+  } catch (error) {
+    console.error("Error in getAllDatePlans:", error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    }
   }
 } 

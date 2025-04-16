@@ -3,10 +3,10 @@ import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { getCurrentUser } from "@/lib/supabase"
-import { getUserDateSetsAction } from "@/app/actions/date-sets"
+import { getUserDateSets } from "@/app/actions/date-sets"
 import { CalendarDays, Clock, Share2, Download } from "lucide-react"
 import Link from "next/link"
-import { format, parseISO } from "date-fns"
+import * as dateFns from "date-fns"
 import { redirect } from "next/navigation"
 
 export default async function DatePlansPage() {
@@ -17,11 +17,12 @@ export default async function DatePlansPage() {
   }
 
   // Get user's date sets
-  const { dateSets = [] } = await getUserDateSetsAction()
+  const result = await getUserDateSets(user.id)
+  const dateSets = result.success ? result.data || [] : []
 
   return (
     <>
-      <Header isLoggedIn={!!user} userName={user?.user_metadata?.full_name || user?.email || undefined} avatarUrl={user?.user_metadata?.avatar_url || undefined} />
+      <Header />
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">
@@ -53,7 +54,7 @@ export default async function DatePlansPage() {
                     <div className="space-y-3">
                       <div className="flex items-center text-sm">
                         <CalendarDays className="h-4 w-4 mr-2 text-muted-foreground" />
-                        <span>{format(parseISO(dateSet.date), "EEEE, MMMM d, yyyy")}</span>
+                        <span>{dateFns.format(dateFns.parseISO(dateSet.date), "EEEE, MMMM d, yyyy")}</span>
                       </div>
                       <div className="flex items-center text-sm">
                         <Clock className="h-4 w-4 mr-2 text-muted-foreground" />

@@ -416,11 +416,7 @@ export default function Page() {
 
   return (
     <>
-      <Header 
-        isLoggedIn={!!user} 
-        userName={user?.user_metadata?.full_name || user?.email || undefined} 
-        avatarUrl={user?.user_metadata?.avatar_url || undefined} 
-      />
+      <Header />
 
       <main className="min-h-screen bg-[var(--gradient-start)] transition-colors duration-1000">
         <div className="absolute inset-0 bg-grid-white/[0.015] bg-[size:20px_20px]" />

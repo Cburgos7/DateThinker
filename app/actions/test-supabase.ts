@@ -1,7 +1,4 @@
-"use server"
-
-import { createServerActionClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+import { createClient } from "@/utils/supabase/client"
 
 export async function testSupabaseConnection() {
   try {
@@ -9,9 +6,8 @@ export async function testSupabaseConnection() {
     console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
     console.log("Anon key length:", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length);
     
-    // Create a server action client
-    const cookieStore = cookies()
-    const supabase = createServerActionClient({ cookies: () => cookieStore })
+    // Create a client
+    const supabase = createClient()
     
     console.log("Supabase client created, attempting insert...");
     

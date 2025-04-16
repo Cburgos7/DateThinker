@@ -9,11 +9,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, Calendar, Clock, Utensils, Coffee, Wine, Star, Check, X } from "lucide-react"
-import { getCurrentUser } from "@/lib/supabase"
 import { generateGoogleCalendarLink, generateICalEvent } from "@/lib/date-sets"
 import { toast } from "@/components/ui/use-toast"
 import Image from "next/image"
-import { supabase } from "@/lib/supabase"
+import { createClient } from "@/utils/supabase/client"
 
 export default function SharedDatePage() {
   const params = useParams()
@@ -25,14 +24,25 @@ export default function SharedDatePage() {
   const [acceptStatus, setAcceptStatus] = useState<'pending' | 'accepted' | 'declined' | null>(null)
   const [isAddingToCalendar, setIsAddingToCalendar] = useState(false)
   const [needsAuthentication, setNeedsAuthentication] = useState(false)
+  const supabase = createClient()
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [currentUser, dateSetData] = await Promise.all([
-          getCurrentUser(),
-          getDateSetByShareId(shareId),
-        ])
+        // Get the current user directly from Supabase
+        const { data: { user: currentUser } } = await supabase.auth.getUser()
+        
+        // Get the date set by share ID
+        const { data: dateSetData, error } = await supabase
+          .from('date_sets')
+          .select('*')
+          .eq('share_id', shareId)
+          .single()
+          
+        if (error) {
+          console.error("Error fetching date set:", error)
+          return
+        }
 
         setUser(currentUser)
         setDateSet(dateSetData)
@@ -48,22 +58,7 @@ export default function SharedDatePage() {
     } else {
       setIsLoading(false)
     }
-  }, [shareId])
-
-  useEffect(() => {
-    async function checkAuth() {
-      if (!user && supabase) {
-        const { data } = await supabase.auth.getSession();
-        if (!data.session) {
-          // Store the share URL to redirect back after login
-          localStorage.setItem('redirectAfterLogin', window.location.href);
-          router.push('/auth');
-        }
-      }
-    }
-    
-    checkAuth();
-  }, [user, router]);
+  }, [shareId, supabase])
 
   // Handle authentication requirement for accepting dates
   useEffect(() => {
@@ -88,43 +83,62 @@ export default function SharedDatePage() {
         userId: user.id 
       });
       
-      // For invitation acceptance, we need to pass the current user's ID
-      // as the sharedWithId since they're accepting it
-      let success = await shareDateSet(
-        dateSet.id,
-        user.id, // The current user who is accepting the invitation
-        user.id, // This is the user being shared with (the recipient)
-        "view",
-        "accepted" // Explicitly mark as accepted
-      );
-      
-      // If the first attempt fails, try with the actual owner ID
-      if (!success) {
-        console.log("First attempt failed, trying with actual owner ID");
-        success = await shareDateSet(
-          dateSet.id,
-          dateSet.user_id, // Use the actual owner's ID
-          user.id,
-          "view",
-          "accepted"
-        );
+      // First check if a record already exists
+      const { data: existingShares, error: checkError } = await supabase
+        .from("shared_date_sets")
+        .select("*")
+        .eq("date_set_id", dateSet.id)
+        .eq("shared_with_id", user.id)
+        .single();
+        
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "not found" which is expected
+        console.error("Error checking for existing shares:", checkError);
+        throw checkError;
       }
       
-      if (success) {
-        // Also update the status in shared_date_sets if needed
-        await updateDateShareStatus(dateSet.id, user.id, "accepted");
-        
-        setAcceptStatus('accepted');
-        toast({
-          title: "Date plan accepted",
-          description: "The date plan has been added to your dates",
-        });
-        
-        // Show calendar options
-        setIsAddingToCalendar(true);
+      // If record exists, update it. Otherwise, insert a new one
+      let error;
+      if (existingShares) {
+        console.log("Updating existing share record:", existingShares.id);
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from("shared_date_sets")
+          .update({ 
+            status: "accepted",
+            permission_level: "view" 
+          })
+          .eq("id", existingShares.id);
+          
+        error = updateError;
       } else {
-        throw new Error("Failed to accept date plan");
+        console.log("Creating new share record");
+        // Insert new record
+        const { error: insertError } = await supabase
+          .from("shared_date_sets")
+          .insert({
+            date_set_id: dateSet.id,
+            owner_id: dateSet.user_id,
+            shared_with_id: user.id,
+            permission_level: "view",
+            status: "accepted"
+          });
+          
+        error = insertError;
       }
+      
+      if (error) {
+        console.error("Error updating/inserting shared date:", error);
+        throw error;
+      }
+      
+      setAcceptStatus('accepted');
+      toast({
+        title: "Date plan accepted",
+        description: "The date plan has been added to your dates",
+      });
+      
+      // Show calendar options
+      setIsAddingToCalendar(true);
     } catch (error) {
       console.error("Error accepting date plan:", error);
       toast({
@@ -139,8 +153,52 @@ export default function SharedDatePage() {
     if (!user || !dateSet) return;
     
     try {
-      // Update the status to declined
-      await updateDateShareStatus(dateSet.id, user.id, "declined");
+      // First check if a record already exists
+      const { data: existingShares, error: checkError } = await supabase
+        .from("shared_date_sets")
+        .select("*")
+        .eq("date_set_id", dateSet.id)
+        .eq("shared_with_id", user.id)
+        .single();
+        
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "not found" which is expected
+        console.error("Error checking for existing shares:", checkError);
+        throw checkError;
+      }
+      
+      // If record exists, update it. Otherwise, insert a new one
+      let error;
+      if (existingShares) {
+        console.log("Updating existing share record:", existingShares.id);
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from("shared_date_sets")
+          .update({ 
+            status: "declined"
+          })
+          .eq("id", existingShares.id);
+          
+        error = updateError;
+      } else {
+        console.log("Creating new share record with declined status");
+        // Insert new record
+        const { error: insertError } = await supabase
+          .from("shared_date_sets")
+          .insert({
+            date_set_id: dateSet.id,
+            owner_id: dateSet.user_id,
+            shared_with_id: user.id,
+            permission_level: "view",
+            status: "declined"
+          });
+          
+        error = insertError;
+      }
+      
+      if (error) {
+        console.error("Error declining shared date:", error);
+        throw error;
+      }
       
       setAcceptStatus('declined');
       toast({
@@ -182,6 +240,9 @@ export default function SharedDatePage() {
 
   // Redirect to login when user clicks the login button
   const handleLoginRedirect = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('redirectAfterLogin', window.location.href);
+    }
     router.push('/auth');
   }
 
@@ -228,7 +289,7 @@ export default function SharedDatePage() {
     <>
       <title>{dateSet ? `${dateSet.title} | DateThinker` : "Shared Date Plan | DateThinker"}</title>
       <div className={!dateSet ? "min-h-screen flex items-center justify-center" : ""}>
-        <Header isLoggedIn={!!user} userName={user?.user_metadata?.full_name || user?.email || undefined} avatarUrl={user?.user_metadata?.avatar_url || undefined} />
+        <Header />
         <div className="container mx-auto px-4 py-8">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-6">

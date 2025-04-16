@@ -1,5 +1,4 @@
-"use server"
-
+import { createClient } from "@/utils/supabase/client"
 import { getCurrentUser, getUserWithSubscription } from "@/lib/supabase"
 import { addToFavorites, removeFromFavorites, isInFavorites } from "@/lib/favorites"
 import type { PlaceResult } from "@/lib/search-utils"
@@ -47,16 +46,76 @@ export async function checkIsFavorite(placeId: string): Promise<boolean> {
   }
 }
 
-// Add this new server action for removing favorites
-export async function removeFromFavoritesAction(userId: string, placeId: string) {
-  "use server"
-
+export async function addToFavoritesAction(userId: string, placeId: string) {
   try {
-    await removeFromFavorites(userId, placeId)
+    const supabase = createClient()
+    
+    // Check if the favorite already exists
+    const { data: existingFavorite, error: checkError } = await supabase
+      .from('favorites')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('place_id', placeId)
+      .maybeSingle()
+    
+    if (checkError) {
+      console.error("Error checking for existing favorite:", checkError)
+      return { success: false, error: checkError.message }
+    }
+    
+    // If favorite already exists, return early
+    if (existingFavorite) {
+      return { success: true, data: existingFavorite }
+    }
+    
+    // Otherwise, add the new favorite
+    const { data, error } = await supabase
+      .from('favorites')
+      .insert({
+        user_id: userId,
+        place_id: placeId,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("Error adding favorite:", error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, data }
+  } catch (error) {
+    console.error("Error in addToFavorites:", error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    }
+  }
+}
+
+export async function removeFromFavoritesAction(userId: string, placeId: string) {
+  try {
+    const supabase = createClient()
+    
+    const { error } = await supabase
+      .from('favorites')
+      .delete()
+      .eq('user_id', userId)
+      .eq('place_id', placeId)
+    
+    if (error) {
+      console.error("Error removing favorite:", error)
+      return { success: false, error: error.message }
+    }
+    
     return { success: true }
   } catch (error) {
     console.error("Error removing favorite:", error)
-    return { success: false }
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    }
   }
 }
 

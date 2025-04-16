@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isToday } from "date-fns"
+import * as dateFns from "date-fns"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
@@ -32,17 +32,17 @@ function Calendar({
   const [currentMonth, setCurrentMonth] = React.useState<Date>(selected || new Date())
 
   const days = React.useMemo(() => {
-    const start = startOfMonth(currentMonth)
-    const end = endOfMonth(currentMonth)
-    return eachDayOfInterval({ start, end })
+    const start = dateFns.startOfMonth(currentMonth)
+    const end = dateFns.endOfMonth(currentMonth)
+    return dateFns.eachDayOfInterval({ start, end })
   }, [currentMonth])
 
   const previousMonth = React.useCallback(() => {
-    setCurrentMonth(subMonths(currentMonth, 1))
+    setCurrentMonth(dateFns.subMonths(currentMonth, 1))
   }, [currentMonth])
 
   const nextMonth = React.useCallback(() => {
-    setCurrentMonth(addMonths(currentMonth, 1))
+    setCurrentMonth(dateFns.addMonths(currentMonth, 1))
   }, [currentMonth])
 
   const handleDayClick = React.useCallback(
@@ -67,7 +67,7 @@ function Calendar({
           <ChevronLeft className="h-4 w-4" />
         </button>
         <div className="text-sm font-medium">
-          {format(currentMonth, "MMMM yyyy")}
+          {dateFns.format(currentMonth, "MMMM yyyy")}
         </div>
         <button
           type="button"
@@ -89,10 +89,10 @@ function Calendar({
       </div>
       <div className="mt-2 grid grid-cols-7 text-sm">
         {days.map((day, dayIdx) => {
-          const isSelected = selected ? isSameDay(day, selected) : false
+          const isSelected = selected ? dateFns.isSameDay(day, selected) : false
           const isDisabled = disabled ? disabled(day) : false
-          const isCurrentMonth = isSameMonth(day, currentMonth)
-          const isCurrentDay = isToday(day)
+          const isCurrentMonth = dateFns.isSameMonth(day, currentMonth)
+          const isCurrentDay = dateFns.isToday(day)
 
           return (
             <div
@@ -117,7 +117,7 @@ function Calendar({
                   isDisabled && "text-muted-foreground opacity-50"
                 )}
               >
-                {format(day, "d")}
+                {dateFns.format(day, "d")}
               </button>
             </div>
           )

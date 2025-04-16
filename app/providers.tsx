@@ -2,6 +2,7 @@
 
 import { Toaster } from "@/components/ui/toaster"
 import { createContext, useContext, useState, useEffect } from "react"
+import { AuthProvider } from "@/contexts/auth-context"
 
 // Create a context for the mounted state
 const MountedContext = createContext<boolean>(false)
@@ -19,8 +20,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <MountedContext.Provider value={mounted}>
-      {children}
-      <Toaster />
+      <AuthProvider>
+        {children}
+        <Toaster />
+      </AuthProvider>
     </MountedContext.Provider>
   )
 } 

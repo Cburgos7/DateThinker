@@ -1,15 +1,27 @@
-"use server"
+import { createClient } from "@/utils/supabase/client"
 
-import { deleteDateSetAction } from "@/app/actions/date-sets"
-import { redirect } from "next/navigation"
-
-export async function deleteAndRedirectAction(dateSetId: string) {
-  const result = await deleteDateSetAction(dateSetId)
-
-  if (result.success) {
-    redirect("/date-plans")
+export async function deleteDatePlan(dateId: string) {
+  try {
+    const supabase = createClient()
+    
+    // Delete the date plan
+    const { error } = await supabase
+      .from('date_plans')
+      .delete()
+      .eq('id', dateId)
+    
+    if (error) {
+      console.error("Error deleting date plan:", error)
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true }
+  } catch (error) {
+    console.error("Error in deleteDatePlan:", error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    }
   }
-
-  return result
 }
 

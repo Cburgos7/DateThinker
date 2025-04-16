@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Copy, Check, Mail, Phone, Link, Share2, Calendar } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { DatePlan, DateSet } from "@/lib/types"
-import { format } from "date-fns"
+import * as dateFns from "date-fns"
 
 interface ShareDatePlanProps {
   dateSet: DatePlan | DateSet
@@ -45,7 +45,7 @@ export function ShareDatePlan({ dateSet, onClose }: ShareDatePlanProps) {
     body += `Title: ${dateSet.title}\n`
     
     if ('date' in dateSet) {
-      body += `Date: ${format(new Date(dateSet.date), "PPP")}\n`
+      body += `Date: ${dateFns.format(new Date(dateSet.date), "PPP")}\n`
       body += `Time: ${dateSet.start_time} - ${dateSet.end_time}\n\n`
     }
     
@@ -58,7 +58,7 @@ export function ShareDatePlan({ dateSet, onClose }: ShareDatePlanProps) {
     let message = `Check out this date plan: ${dateSet.title}\n`
     
     if ('date' in dateSet) {
-      message += `Date: ${format(new Date(dateSet.date), "PPP")}\n`
+      message += `Date: ${dateFns.format(new Date(dateSet.date), "PPP")}\n`
       message += `Time: ${dateSet.start_time} - ${dateSet.end_time}\n\n`
     }
     
