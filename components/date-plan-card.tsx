@@ -1,6 +1,6 @@
 'use client'
 
-import { format, parseISO, differenceInMinutes } from 'date-fns'
+import * as dateFns from "date-fns"
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Clock, MapPin, Share2 } from 'lucide-react'
@@ -23,7 +23,7 @@ export function DatePlanCard({ dateSet, showActions = true }: DatePlanCardProps)
           <div>
             <CardTitle>{dateSet.title}</CardTitle>
             <CardDescription>
-              {dateSet.date ? format(new Date(dateSet.date), 'MMMM d, yyyy') : 'No date specified'}
+              {dateSet.date ? dateFns.format(new Date(dateSet.date), 'MMMM d, yyyy') : 'No date specified'}
             </CardDescription>
           </div>
           {showActions && (
@@ -93,9 +93,9 @@ export function DatePlanCard({ dateSet, showActions = true }: DatePlanCardProps)
 // Helper function to calculate duration
 function calculateDuration(startTime: string, endTime: string): string {
   try {
-    const totalMinutes = differenceInMinutes(
-      parseISO(`2000-01-01T${endTime}`),
-      parseISO(`2000-01-01T${startTime}`)
+    const totalMinutes = dateFns.differenceInMinutes(
+      dateFns.parseISO(`2000-01-01T${endTime}`),
+      dateFns.parseISO(`2000-01-01T${startTime}`)
     )
     
     const hours = Math.floor(totalMinutes / 60)

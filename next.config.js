@@ -2,6 +2,7 @@
 const nextConfig = {
   experimental: {
     caseSensitiveRoutes: false,
+    serverActions: true,
   },
   async headers() {
     return [
@@ -57,8 +58,7 @@ const nextConfig = {
   images: {
     domains: ["images.unsplash.com"],
   },
-  // Fix for case sensitivity issues with date-fns
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     // Add a resolve alias for date-fns to ensure consistent casing
     config.resolve.alias = {
       ...config.resolve.alias,
@@ -66,19 +66,39 @@ const nextConfig = {
       'date-fns/locale': require.resolve('date-fns/locale'),
     };
     
-    // Remove the invalid caseSensitive property
-    // Instead, make sure all import paths use consistent casing
-    // Add wildcard aliases for any problematic paths
-    if (config.resolve.alias) {
-      // Add any key folders that might have case sensitivity issues
-      const appDir = require('path').resolve(__dirname, './app');
-      const componentsDir = require('path').resolve(__dirname, './components');
-      
-      config.resolve.alias['APP'] = appDir;
-      config.resolve.alias['app'] = appDir;
-      config.resolve.alias['COMPONENTS'] = componentsDir;
-      config.resolve.alias['components'] = componentsDir;
+    // Add path aliases
+    const path = require('path');
+    config.resolve.alias['APP'] = path.resolve(__dirname, './app');
+    config.resolve.alias['app'] = path.resolve(__dirname, './app');
+    config.resolve.alias['COMPONENTS'] = path.resolve(__dirname, './components');
+    config.resolve.alias['components'] = path.resolve(__dirname, './components');
+
+    // Ensure CSS modules are properly configured
+    if (!isServer) {
+      config.module.rules.push({
+        test: /\.css$/,
+        use: [
+          'style-loader',
+          'css-loader',
+          {
+            loader: 'postcss-loader',
+            options: {
+              postcssOptions: {
+                plugins: [
+                  require('tailwindcss'),
+                  require('autoprefixer'),
+                ],
+              },
+            },
+          },
+        ],
+      });
     }
+    
+    // Ignore WebSocket optional dependency warnings
+    config.ignoreWarnings = [
+      { module: /node_modules\/ws\/lib\/(buffer-util|validation)\.js/ }
+    ];
     
     return config;
   },

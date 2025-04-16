@@ -14,11 +14,7 @@ export default async function PricingPage() {
 
   return (
     <>
-      <Header 
-        isLoggedIn={isAuthenticated} 
-        userName={user?.user_metadata?.full_name || user?.email || undefined}
-        avatarUrl={user?.user_metadata?.avatar_url || undefined}
-      />
+      <Header />
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">

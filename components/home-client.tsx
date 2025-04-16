@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { getCurrentUser } from "@/lib/supabase"
+import { useAuth } from "@/contexts/auth-context"
 
 // Date image slideshow data
 const dateImages = [
@@ -44,6 +45,9 @@ export function HomeClient() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [user, setUser] = useState<any>(null)
   const [isLoadingUser, setIsLoadingUser] = useState(true)
+  const { user: authUser } = useAuth()
+  
+  const currentUser = authUser || user
 
   // Fetch current user on component mount
   useEffect(() => {
@@ -73,16 +77,16 @@ export function HomeClient() {
 
   // Handle start button click to either navigate to search or prompt sign in
   const handleStartClick = () => {
-    if (user) {
+    if (currentUser) {
       router.push("/make-date") // Navigate to make a date page
     } else {
-      router.push("/auth?showForm=true&manualSignIn=true") // Navigate to auth page with required parameters
+      router.push("/login?action=get-started") // Navigate to login with action parameter
     }
   }
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-[var(--gradient-start)] to-[var(--gradient-end)]">
-      <Header isLoggedIn={!!user} userName={user?.email?.split("@")[0]} />
+      <Header />
       
       <main className="flex-grow flex flex-col md:flex-row items-center overflow-hidden relative">
         {/* Background slideshow */}
@@ -128,9 +132,9 @@ export function HomeClient() {
                 size="lg" 
                 className="bg-rose-500 hover:bg-rose-600 text-white px-8"
               >
-                {user ? "Find Date Ideas" : "Get Started"}
+                {currentUser ? "Find Date Ideas" : "Get Started"}
               </Button>
-              {!user && (
+              {!currentUser && (
                 <Button
                   variant="outline"
                   size="lg" 
@@ -266,7 +270,7 @@ export function HomeClient() {
           <p className="text-lg mb-8 text-rose-100">
             Join thousands of couples who have discovered amazing date ideas with DateThinker.
           </p>
-          {user ? (
+          {currentUser ? (
             <Button
               onClick={() => router.push('/make-date')}
               size="lg" 

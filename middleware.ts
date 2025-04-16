@@ -1,102 +1,126 @@
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 
 export async function middleware(request: NextRequest) {
+  // Create a response object to modify
+  const res = NextResponse.next()
+  
   try {
-    // Create a response object that we can modify
-    const res = NextResponse.next()
+    // Extract auth tokens from cookies directly to check auth status
+    // This bypasses the problematic JSON parsing
+    const hasSessionCookie = request.cookies.has('sb-access-token') || 
+                            request.cookies.has('sb-refresh-token') ||
+                            request.cookies.has('supabase-auth-token') ||
+                            // Also check our custom sync cookie
+                            request.cookies.has('sb-auth-sync');
+                            
+    // Check for token in authorization header as fallback
+    const authHeader = request.headers.get('authorization');
+    const hasAuthHeader = authHeader && authHeader.startsWith('Bearer ');
     
-    // Get environment variables
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    // Consider the user authenticated if any auth indicators are present
+    const isAuthenticated = hasSessionCookie || hasAuthHeader;
     
-    // Check if environment variables are available
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase environment variables in middleware')
+    // Log authentication state in middleware for debugging
+    console.log('Middleware auth check:', { 
+      path: request.nextUrl.pathname, 
+      isAuthenticated 
+    });
+    
+    // Get the pathname of the request
+    const path = request.nextUrl.pathname
+    
+    // Check for auth tokens in URL (for callbacks)
+    const hasAuthTokenInUrl = request.nextUrl.hash && 
+                              (request.nextUrl.hash.includes('access_token') || 
+                               request.nextUrl.hash.includes('refresh_token'))
+
+    // If there are auth tokens in the URL, don't redirect
+    if (hasAuthTokenInUrl) {
       return res
     }
-    
-    // Check for placeholder values
-    if (supabaseUrl.includes('your-supabase-url') || supabaseKey.includes('your-supabase-anon-key')) {
-      console.error('Supabase environment variables contain placeholder values in middleware')
-      return res
+
+    // Define protected routes
+    const protectedRoutes = [
+      '/make-date', 
+      '/my-dates', 
+      '/favorites', 
+      '/account', 
+      '/settings', 
+      '/date-plans'
+    ]
+    const isProtectedRoute = protectedRoutes.some(route => 
+      path === route || path.startsWith(route + '/')
+    )
+
+    // Check if the current request is a button or nav action to a protected route
+    const buttonAction = request.nextUrl.searchParams.get('action')
+    const isButtonNavigation = buttonAction === 'get-started' || buttonAction === 'make-date'
+
+    // If the route is protected and user is not authenticated, redirect to login
+    if (isProtectedRoute && !isAuthenticated) {
+      console.log('Middleware: Redirecting to login from protected route:', path);
+      const redirectUrl = new URL('/login', request.url)
+      redirectUrl.searchParams.set('redirectedFrom', path)
+      return NextResponse.redirect(redirectUrl)
     }
-    
-    // Get the pathname for route checking
-    const pathname = request.nextUrl.pathname
-    
-    // IMPORTANT: Don't block assets and API routes
-    const isAssetRoute = pathname.startsWith('/_next') || 
-                        pathname.includes('/favicon.ico') ||
-                        pathname.includes('.') ||
-                        pathname.startsWith('/api/');
-                        
-    if (isAssetRoute) {
-      return res;
+
+    // Handle button navigation action
+    if (isButtonNavigation && !isAuthenticated) {
+      const targetPath = buttonAction === 'get-started' || buttonAction === 'make-date' ? '/make-date' : '/'
+      const redirectUrl = new URL('/login', request.url)
+      redirectUrl.searchParams.set('redirectedFrom', targetPath)
+      return NextResponse.redirect(redirectUrl)
     }
-    
-    // Check if this is a protected route that requires authentication
-    const protectedPaths = ['/account', '/favorites', '/my-dates', '/date-plans']
-    const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path))
-    
-    // Only do auth checks if it's worth doing
-    if (isProtectedPath || pathname.startsWith('/auth')) {
-      try {
-        // Create the middleware client
-        const supabase = createMiddlewareClient(
-          { req: request, res },
-          {
-            supabaseUrl,
-            supabaseKey,
-          }
-        )
-        
-        // Get and refresh the session
-        const { data } = await supabase.auth.getSession()
-        let session = data.session
-        
-        // Debug information
-        console.log(`AUTH CHECK: Path ${pathname}, Session exists: ${!!session}, User: ${session?.user?.id || 'none'}`)
-        
-        // Handle login redirect if user is already logged in
-        if (session && pathname.startsWith('/auth')) {
-          console.log('Redirecting from auth to home (user is logged in)')
-          return NextResponse.redirect(new URL('/', request.url))
-        }
-        
-        // Handle protected routes when user is not logged in
-        if (!session && isProtectedPath) {
-          console.log(`Redirecting to auth from protected path: ${pathname}`)
-          const redirectUrl = new URL('/auth', request.url)
-          redirectUrl.searchParams.set('redirect', pathname)
-          return NextResponse.redirect(redirectUrl)
-        }
-      } catch (authError) {
-        console.error('Auth error in middleware:', authError)
-        // Continue on auth error - don't block the request
+
+    // If the user is logged in and tries to access the login page, redirect to home or previous page
+    if ((path === '/login' || path === '/auth') && isAuthenticated) {
+      console.log('Middleware: User is authenticated, redirecting from login')
+      
+      // Check if there's a redirectedFrom parameter to go back to
+      const redirectedFrom = request.nextUrl.searchParams.get('redirectedFrom')
+      if (redirectedFrom) {
+        return NextResponse.redirect(new URL(redirectedFrom, request.url))
       }
+      
+      // If no redirectedFrom parameter but there's a referer, try to use that
+      const referer = request.headers.get('referer')
+      if (referer) {
+        try {
+          const refererUrl = new URL(referer)
+          // Only redirect to referer if it's from the same origin and not a login page
+          if (refererUrl.origin === request.nextUrl.origin && 
+              !refererUrl.pathname.includes('/login') && 
+              !refererUrl.pathname.includes('/auth')) {
+            return NextResponse.redirect(refererUrl)
+          }
+        } catch (e) {
+          // Invalid referer URL, just continue to home
+        }
+      }
+      
+      return NextResponse.redirect(new URL('/', request.url))
     }
-    
-    // Continue with the request for non-protected routes
+
     return res
   } catch (error) {
     console.error('Middleware error:', error)
-    // Return a new response even if there's an error to prevent the app from crashing
-    return NextResponse.next()
+    // In case of any error, allow the request to proceed
+    // This prevents users from being stuck if authentication fails
+    return res
   }
 }
 
-// Specify which routes should be processed by this middleware
-// Include server action routes to ensure auth is properly handled
 export const config = {
   matcher: [
-    '/auth', 
-    '/account/:path*',
-    '/favorites/:path*',
-    // Remove date-plans from middleware protection for now until we fix the auth
-    // '/date-plans/:path*',
-    '/api/:path*',
-    '/((?!_next/static|_next/image|favicon.ico|api|my-dates|date-plans).*)',
-  ]
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 } 

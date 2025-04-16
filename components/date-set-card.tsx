@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { DateSet } from '@/lib/date-sets'
-import { format, parseISO, differenceInMinutes } from 'date-fns'
+import * as dateFns from "date-fns"
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,8 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Share2, Clock, MapPin, Edit, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { updateDateSetAction } from '@/app/actions/date-sets'
 import Link from 'next/link'
+import { createClient } from "@/utils/supabase/client"
 
 interface DateSetCardProps {
   dateSet: any; // Using any for maximum compatibility with different formats
@@ -84,7 +84,7 @@ export function DateSetCard({ dateSet, onUpdate }: DateSetCardProps) {
   let formattedDate;
   try {
     formattedDate = dateSet.date 
-      ? format(new Date(dateSet.date), 'MMMM d, yyyy')
+      ? dateFns.format(new Date(dateSet.date), 'MMMM d, yyyy')
       : 'No date specified';
   } catch (error) {
     console.error("Error formatting date:", error);
@@ -95,9 +95,9 @@ export function DateSetCard({ dateSet, onUpdate }: DateSetCardProps) {
   let totalTimeDisplay = '';
   try {
     if (startTime && endTime) {
-      const totalMinutes = differenceInMinutes(
-        parseISO(`2000-01-01T${endTime}`),
-        parseISO(`2000-01-01T${startTime}`)
+      const totalMinutes = dateFns.differenceInMinutes(
+        dateFns.parseISO(`2000-01-01T${endTime}`),
+        dateFns.parseISO(`2000-01-01T${startTime}`)
       );
       
       const hours = Math.floor(totalMinutes / 60);
@@ -112,24 +112,29 @@ export function DateSetCard({ dateSet, onUpdate }: DateSetCardProps) {
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      const result = await updateDateSetAction(
-        dateSet.id,
-        dateSet.title,
-        dateSet.date,
-        startTime,
-        endTime,
-        dateSet.places,
-        dateSet.notes || undefined
-      )
+      const supabase = createClient();
       
-      if (result.success) {
-        toast.success('Date set updated successfully')
-        setIsEditing(false)
-        if (onUpdate && result.dateSet) {
-          onUpdate(result.dateSet)
-        }
-      } else {
-        toast.error(result.error || 'Failed to update date set')
+      // Update the date set directly
+      const { data, error } = await supabase
+        .from('date_sets')
+        .update({
+          start_time: startTime,
+          end_time: endTime,
+        })
+        .eq('id', dateSet.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error updating date set:', error);
+        toast.error(error.message || 'Failed to update date set');
+        return;
+      }
+      
+      toast.success('Date set updated successfully')
+      setIsEditing(false)
+      if (onUpdate && data) {
+        onUpdate(data)
       }
     } catch (error) {
       console.error('Error updating date set:', error)

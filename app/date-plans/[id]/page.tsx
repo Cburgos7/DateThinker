@@ -9,7 +9,7 @@ import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
-import { format } from 'date-fns'
+import * as dateFns from "date-fns"
 import { use } from 'react'
 import { ShareDateDialog } from '@/components/share-date-dialog'
 
@@ -175,7 +175,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
             <CardTitle className="text-2xl">{datePlan.title || 'Untitled Date Plan'}</CardTitle>
             <div className="flex items-center text-gray-600 mt-1">
               <Calendar className="h-4 w-4 mr-1" />
-              <span>{datePlan.date ? format(new Date(datePlan.date), 'MMMM d, yyyy') : 'No date specified'}</span>
+              <span>{datePlan.date ? dateFns.format(new Date(datePlan.date), 'MMMM d, yyyy') : 'No date specified'}</span>
             </div>
             {datePlan.start_time && datePlan.end_time && (
               <div className="flex items-center text-gray-600 mt-1">
@@ -229,7 +229,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
               Date Plan ID: {datePlan.id}
               {datePlan.created_at && (
                 <span className="ml-2">
-                  • Created: {format(new Date(datePlan.created_at), 'MMM d, yyyy')}
+                  • Created: {dateFns.format(new Date(datePlan.created_at), 'MMM d, yyyy')}
                 </span>
               )}
             </div>

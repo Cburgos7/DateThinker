@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/utils/supabase/client'
 import { Check, X, Calendar, Clock, Crown, Users, Trash2, Share2 } from 'lucide-react'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/components/ui/use-toast'
@@ -21,6 +21,7 @@ export default function MyDatesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
+  const supabase = createClient()
 
   // Super simplified data loading
   useEffect(() => {
@@ -28,12 +29,6 @@ export default function MyDatesPage() {
     
     const fetchData = async () => {
       try {
-        if (!supabase) {
-          console.error("Supabase client not initialized");
-          setError("Database connection unavailable");
-          return;
-        }
-        
         // First, get the current user
         const { data: { user } } = await supabase.auth.getUser();
         setUser(user);
@@ -75,15 +70,31 @@ export default function MyDatesPage() {
 
         // Fetch date sets shared with the current user
         try {
-          const sharedSets = await getSharedWithMeDateSets(user.id);
-          console.log("BASIC LOADER: Shared date sets", sharedSets.length);
+          // Directly fetch from the database rather than using the helper function
+          // to avoid any potential parsing issues
+          const { data: sharedData, error: sharedError } = await supabase
+            .from("shared_date_sets")
+            .select(`
+              *,
+              date_set:date_sets(*)
+            `)
+            .eq("shared_with_id", user.id);
+            
+          if (sharedError) {
+            console.error("Error fetching shared date sets:", sharedError);
+            throw sharedError;
+          }
           
-          // Split shared sets between pending and accepted
-          const pendingShares = sharedSets.filter(set => set.status === 'pending');
-          const acceptedShares = sharedSets.filter(set => set.status === 'accepted');
+          console.log("BASIC LOADER: Shared date sets", sharedData?.length || 0);
           
-          setSharedDateSets(pendingShares);
-          setAcceptedSharedSets(acceptedShares);
+          if (sharedData && sharedData.length > 0) {
+            // Split shared sets between pending and accepted
+            const pendingShares = sharedData.filter((set: any) => set.status === 'pending');
+            const acceptedShares = sharedData.filter((set: any) => set.status === 'accepted');
+            
+            setSharedDateSets(pendingShares);
+            setAcceptedSharedSets(acceptedShares);
+          }
         } catch (sharedError) {
           console.error("Error fetching shared date sets:", sharedError);
           // Don't set the main error, just log it
@@ -101,17 +112,14 @@ export default function MyDatesPage() {
 
   const handleAcceptInvitation = async (sharedDateSet: any) => {
     try {
-      // Update the status to accepted
-      const success = await shareDateSet(
-        sharedDateSet.date_set_id,
-        sharedDateSet.owner_id,
-        user.id,
-        'view',
-        'accepted'
-      );
+      // Update the status to accepted directly using Supabase
+      const { error } = await supabase
+        .from("shared_date_sets")
+        .update({ status: 'accepted' })
+        .eq("id", sharedDateSet.id);
       
-      if (!success) {
-        throw new Error("Failed to accept invitation");
+      if (error) {
+        throw error;
       }
       
       // Move from pending to accepted
@@ -134,19 +142,14 @@ export default function MyDatesPage() {
 
   const handleDeclineInvitation = async (sharedDateSet: any) => {
     try {
-      if (!supabase || !user) return;
+      // Update the status to declined directly using Supabase
+      const { error } = await supabase
+        .from("shared_date_sets")
+        .update({ status: 'declined' })
+        .eq("id", sharedDateSet.id);
       
-      // Remove the sharing permission
-      const success = await shareDateSet(
-        sharedDateSet.date_set_id,
-        sharedDateSet.owner_id,
-        user.id,
-        'view',
-        'declined'
-      );
-      
-      if (!success) {
-        throw new Error("Failed to decline invitation");
+      if (error) {
+        throw error;
       }
       
       // Remove from the displayed list
@@ -168,21 +171,23 @@ export default function MyDatesPage() {
   
   const handleDeleteDateSet = async (dateSetId: string) => {
     try {
-      if (!user) return;
+      // Delete directly using Supabase
+      const { error } = await supabase
+        .from("date_sets")
+        .delete()
+        .eq("id", dateSetId)
+        .eq("user_id", user.id);
       
-      // Only the owner can delete a date set
-      const success = await deleteDateSet(dateSetId, user.id);
-      
-      if (success) {
-        setDateSets(prev => prev.filter(ds => ds.id !== dateSetId));
-        
-        toast({
-          title: "Date plan deleted",
-          description: "The date plan has been permanently deleted",
-        });
-      } else {
-        throw new Error("Failed to delete date plan");
+      if (error) {
+        throw error;
       }
+      
+      setDateSets(prev => prev.filter(ds => ds.id !== dateSetId));
+      
+      toast({
+        title: "Date plan deleted",
+        description: "The date plan has been permanently deleted",
+      });
     } catch (error) {
       console.error("Error deleting date plan:", error);
       toast({
@@ -195,21 +200,23 @@ export default function MyDatesPage() {
   
   const handleRemoveSharedDate = async (dateSetId: string) => {
     try {
-      if (!user) return;
+      // Remove the shared date directly using Supabase
+      const { error } = await supabase
+        .from("shared_date_sets")
+        .delete()
+        .eq("date_set_id", dateSetId)
+        .eq("shared_with_id", user.id);
       
-      // Followers can remove a shared date without deleting it
-      const success = await removeSharedDateSet(dateSetId, user.id);
-      
-      if (success) {
-        setAcceptedSharedSets(prev => prev.filter(ds => ds.date_set_id !== dateSetId));
-        
-        toast({
-          title: "Shared date plan removed",
-          description: "The shared date plan has been removed from your collection",
-        });
-      } else {
-        throw new Error("Failed to remove shared date plan");
+      if (error) {
+        throw error;
       }
+      
+      setAcceptedSharedSets(prev => prev.filter(ds => ds.date_set_id !== dateSetId));
+      
+      toast({
+        title: "Shared date plan removed",
+        description: "The shared date plan has been removed from your collection",
+      });
     } catch (error) {
       console.error("Error removing shared date plan:", error);
       toast({

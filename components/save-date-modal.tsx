@@ -17,17 +17,17 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Calendar } from "@/components/ui/calendar-custom"
-import { format } from "date-fns"
+import * as dateFns from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { saveDateSetAction, saveDateSetWithUserIdAction, saveDateSetWithTokenAction } from "@/app/actions/date-sets"
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
-import { refreshSession, robustGetUser } from "@/lib/supabase"
+import { robustGetUser } from "@/lib/supabase"
 import { useAuth } from "@/app/auth-context"
 import { useSupabaseToken } from "@/lib/use-supabase-token"
+import { createClient } from "@/utils/supabase/client"
 
 const formSchema = z.object({
   title: z.string().min(1, "Please enter a title"),
@@ -49,7 +49,7 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const router = useRouter()
-  const { refreshAuth, user, authStatus, lastAuthError } = useAuth()
+  const { user, authStatus, lastAuthError } = useAuth()
   const { token } = useSupabaseToken()
 
   // Log auth status on mount and when it changes
@@ -87,25 +87,15 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
           userId = robustUserResult.id;
           console.log("Retrieved user with robust method:", userId);
         } else {
-          // Try to refresh auth as fallback
-          console.log("Robust method failed, trying refreshAuth...");
-          await refreshAuth();
-          
-          // Check if we have a user now
-          if (user && user.id) {
-            userId = user.id;
-            console.log("Retrieved user after refreshAuth:", userId);
-          } else {
-            console.error("All authentication methods failed");
-            setErrorMessage("Unable to authenticate. Please sign out completely and sign in again.");
-            toast({
-              title: "Authentication Error",
-              description: "Please sign out and sign back in to refresh your session.",
-              variant: "destructive"
-            });
-            setIsSubmitting(false);
-            return;
-          }
+          console.error("Authentication failed - no user ID available");
+          setErrorMessage("Unable to authenticate. Please sign out completely and sign in again.");
+          toast({
+            title: "Authentication Error",
+            description: "Please sign out and sign back in to refresh your session.",
+            variant: "destructive"
+          });
+          setIsSubmitting(false);
+          return;
         }
       }
       
@@ -148,23 +138,31 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
         throw new Error("User ID is required but not available");
       }
 
-      // Proceed with server action using direct user ID
-      const result = await saveDateSetWithTokenAction(
-        values.title,
-        formattedDate,
-        values.startTime,
-        values.endTime,
-        places,
-        values.notes,
-        userId,
-        token
-      )
+      // Use direct Supabase client instead of server action
+      const supabase = createClient();
+      
+      // Create the date set directly
+      const { data, error } = await supabase
+        .from('date_sets')
+        .insert({
+          user_id: userId,
+          title: values.title,
+          date: formattedDate,
+          start_time: values.startTime,
+          end_time: values.endTime,
+          places,
+          notes: values.notes || null,
+          share_id: `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
 
-      if (!result.success) {
-        setErrorMessage(result.error || "Failed to save date plan. Please try again.")
+      if (error) {
+        setErrorMessage(error.message || "Failed to save date plan. Please try again.")
         toast({
           title: "Error saving date plan",
-          description: result.error,
+          description: error.message,
           variant: "destructive",
         })
         return
@@ -181,8 +179,8 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
       // Then navigate to the date plans page
       // Use a small timeout to ensure the modal is closed before navigation
       setTimeout(() => {
-        if (result.dateSetId) {
-          router.push(`/date-plans/${result.dateSetId}`)
+        if (data?.id) {
+          router.push(`/date-plans/${data.id}`)
         } else {
           // If no specific ID, go to the main date plans page
           router.push('/my-dates')
@@ -248,7 +246,7 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
                             !field.value && "text-muted-foreground"
                           )}
                         >
-                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                          {field.value ? dateFns.format(field.value, "PPP") : <span>Pick a date</span>}
                           <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
                       </PopoverTrigger>
