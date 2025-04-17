@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   // Handle missing token
   if (!token_hash) {
     console.error("No token provided for email confirmation")
-    return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
+    return NextResponse.redirect(new URL("/login?error=Invalid+or+expired+link", requestUrl.origin))
   }
 
   if (token_hash && type) {
@@ -28,18 +28,17 @@ export async function GET(request: NextRequest) {
 
       if (error) {
         console.error("Error verifying OTP:", error)
-        return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
+        return NextResponse.redirect(new URL("/login?error=Invalid+or+expired+link", requestUrl.origin))
       }
 
       // If successful, redirect to success page
       return NextResponse.redirect(new URL("/confirmation-success", requestUrl.origin))
     } catch (err) {
       console.error("Unexpected error in email verification:", err)
-      return NextResponse.redirect(new URL("/auth?error=Verification+failed", requestUrl.origin))
+      return NextResponse.redirect(new URL("/login?error=Verification+failed", requestUrl.origin))
     }
   }
 
   // Fallback error redirect
-  return NextResponse.redirect(new URL("/auth?error=Invalid+or+expired+link", requestUrl.origin))
-}
-
+  return NextResponse.redirect(new URL("/login?error=Invalid+or+expired+link", requestUrl.origin))
+} 

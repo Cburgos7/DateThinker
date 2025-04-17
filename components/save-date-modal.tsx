@@ -24,9 +24,7 @@ import { cn } from "@/lib/utils"
 import type { PlaceResult } from "@/lib/search-utils"
 import { toast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
-import { robustGetUser } from "@/lib/supabase"
-import { useAuth } from "@/app/auth-context"
-import { useSupabaseToken } from "@/lib/use-supabase-token"
+import { useAuth } from "@/contexts/auth-context"
 import { createClient } from "@/utils/supabase/client"
 
 const formSchema = z.object({
@@ -49,13 +47,12 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const router = useRouter()
-  const { user, authStatus, lastAuthError } = useAuth()
-  const { token } = useSupabaseToken()
+  const { user, session } = useAuth()
 
   // Log auth status on mount and when it changes
   useEffect(() => {
-    console.log("SaveDateModal auth status:", authStatus, "User ID:", user?.id || "none", "Error:", lastAuthError || "none");
-  }, [authStatus, user, lastAuthError]);
+    console.log("SaveDateModal auth status:", user ? 'authenticated' : 'unauthenticated', "User ID:", user?.id || "none");
+  }, [user]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -73,54 +70,25 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
     setErrorMessage("")
 
     try {
-      console.log("Starting form submission - User:", !!user, "Auth status:", authStatus);
+      console.log("Starting form submission - User:", !!user, "Session:", !!session);
       
-      // Direct check for user existence rather than relying on auth status
-      let userId = user?.id;
-      
-      if (!userId) {
-        console.log("No user found, attempting to get user with robust method...");
-        
-        // Try to get user with robust method
-        const robustUserResult = await robustGetUser();
-        if (robustUserResult && robustUserResult.id) {
-          userId = robustUserResult.id;
-          console.log("Retrieved user with robust method:", userId);
-        } else {
-          console.error("Authentication failed - no user ID available");
-          setErrorMessage("Unable to authenticate. Please sign out completely and sign in again.");
-          toast({
-            title: "Authentication Error",
-            description: "Please sign out and sign back in to refresh your session.",
-            variant: "destructive"
-          });
-          setIsSubmitting(false);
-          return;
-        }
-      }
-      
-      // Force a short delay to ensure auth is fully processed
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Check if we have a token
-      if (!token) {
-        setErrorMessage("Authentication token not available. Please sign out and sign back in.")
+      // Check if user is authenticated
+      if (!user || !user.id) {
+        console.error("Authentication error - user not logged in");
+        setErrorMessage("You must be logged in to save a date plan.");
         toast({
           title: "Authentication Error",
-          description: "No authentication token available. Please sign out and sign back in.",
+          description: "Please sign in to save your date plan.",
           variant: "destructive"
-        })
-        setIsSubmitting(false)
-        return
+        });
+        setIsSubmitting(false);
+        return;
       }
       
       // Format the date to YYYY-MM-DD
       const dateObj = new Date(values.date)
       const formattedDate = dateObj.toISOString().split('T')[0]
 
-      // Report user status for debugging
-      console.log("Proceeding with submission - User ID:", userId, "Auth status:", authStatus);
-      
       console.log("Submitting form with values:", {
         title: values.title,
         date: values.date,
@@ -128,24 +96,18 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
         endTime: values.endTime,
         notes: values.notes,
         places: places.length,
-        userID: userId,
-        authStatus
+        userID: user.id
       })
       console.log("Places to save:", places)
 
-      // Final safety check before submission
-      if (!userId) {
-        throw new Error("User ID is required but not available");
-      }
-
-      // Use direct Supabase client instead of server action
+      // Create a new client on each submission to ensure fresh authentication
       const supabase = createClient();
       
       // Create the date set directly
       const { data, error } = await supabase
         .from('date_sets')
         .insert({
-          user_id: userId,
+          user_id: user.id,
           title: values.title,
           date: formattedDate,
           start_time: values.startTime,
@@ -176,15 +138,11 @@ export function SaveDateModal({ isOpen, onClose, places }: SaveDateModalProps) {
       // Close the modal first
       onClose()
       
-      // Then navigate to the date plans page
+      // Then navigate to the main date plans page
       // Use a small timeout to ensure the modal is closed before navigation
       setTimeout(() => {
-        if (data?.id) {
-          router.push(`/date-plans/${data.id}`)
-        } else {
-          // If no specific ID, go to the main date plans page
-          router.push('/my-dates')
-        }
+        // Always redirect to the main dates page to avoid issues with the detail page
+        router.push('/my-dates')
       }, 100)
     } catch (error) {
       console.error("Error saving date set:", error)

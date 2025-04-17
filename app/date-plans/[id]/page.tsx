@@ -1,112 +1,185 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ArrowLeft, Calendar, Clock, MapPin, Info, Share2, Link as LinkIcon, Mail, Copy, UserPlus, Check } from 'lucide-react'
+import { ArrowLeft, Calendar, Clock, MapPin, Info } from 'lucide-react'
 import Link from 'next/link'
 import { Header } from '@/components/header'
 import { Footer } from '@/components/footer'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { supabase } from '@/lib/supabase'
 import * as dateFns from "date-fns"
-import { use } from 'react'
 import { ShareDateDialog } from '@/components/share-date-dialog'
+import { createClient } from "@/utils/supabase/client"
+import { useAuth } from "@/contexts/auth-context"
 
 interface DatePlanPageProps {
-  params: Promise<{
+  params: {
     id: string
-  }>
+  }
+}
+
+interface DatePlan {
+  id: string;
+  title?: string;
+  user_id: string;
+  date?: string;
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+  places?: any[];
+  created_at?: string;
+  share_id?: string;
 }
 
 export default function DatePlanPage({ params }: DatePlanPageProps) {
-  // Properly unwrap the params Promise using React.use()
-  const resolvedParams = use(params)
-  const id = resolvedParams.id
+  const id = params.id
+  const supabase = createClient()
+  const { user } = useAuth()
   
-  const [datePlan, setDatePlan] = useState<any>(null)
+  const [datePlan, setDatePlan] = useState<DatePlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [user, setUser] = useState<any>(null)
+  const [isAuthenticating, setIsAuthenticating] = useState(true)
+  const [authAttempts, setAuthAttempts] = useState(0)
+  const [isDataFetched, setIsDataFetched] = useState(false)
 
+  // Check authentication status with retry limit
   useEffect(() => {
-    async function loadDatePlan() {
-      try {
-        console.log("DETAIL PAGE: Loading date plan", id);
-        
-        if (!supabase) {
-          console.error("Supabase client not initialized");
-          setError("Database connection unavailable");
-          setLoading(false);
-          return;
-        }
-        
-        // First, get the current user
-        const { data: { user } } = await supabase.auth.getUser();
-        setUser(user);
-        
-        if (!user) {
-          console.log("DETAIL PAGE: No authenticated user found");
-          setError("Please log in to view this date plan");
-          setLoading(false);
-          return;
-        }
-        
-        console.log("DETAIL PAGE: Fetching date plan for user", user.id);
-        
-        // Query directly from date_sets table
-        const { data, error: fetchError } = await supabase
-          .from('date_sets')
-          .select('*')
-          .eq('id', id)
-          .single();
-        
-        console.log("DETAIL PAGE: Query result", { 
-          success: !fetchError, 
-          dataFound: !!data 
-        });
-        
-        if (fetchError) {
-          console.error("Error fetching date plan:", fetchError);
-          setError(fetchError.message);
-          setLoading(false);
-          return;
-        }
-        
-        if (!data) {
-          console.log("DETAIL PAGE: Date plan not found");
-          setError("Date plan not found");
-          setLoading(false);
-          return;
-        }
-        
-        // Make sure places is an array
-        let places = data.places || [];
-        if (typeof places === 'string') {
-          try {
-            places = JSON.parse(places);
-          } catch (e) {
-            console.error("Error parsing places:", e);
-            places = [];
-          }
-        }
-        
-        data.places = Array.isArray(places) ? places : [];
-        console.log("DETAIL PAGE: Setting date plan data", { id: data.id, places: data.places.length });
-        
-        setDatePlan(data);
-      } catch (err) {
-        console.error("Unexpected error loading date plan:", err);
-        setError(`An unexpected error occurred: ${err instanceof Error ? err.message : String(err)}`);
-      } finally {
-        setLoading(false);
-      }
+    // Maximum auth attempts to prevent infinite loops
+    const MAX_AUTH_ATTEMPTS = 2
+    let isMounted = true
+    
+    // Skip if we've tried too many times already
+    if (authAttempts >= MAX_AUTH_ATTEMPTS) {
+      setIsAuthenticating(false)
+      return
     }
 
-    loadDatePlan();
-  }, [id]); // Keep using the unwrapped id
+    // Skip if we have user info already
+    if (user) {
+      console.log("User already available from context")
+      setIsAuthenticating(false)
+      return
+    }
+    
+    async function checkAuthStatus() {
+      try {
+        // Try to get the session directly
+        const { data } = await supabase.auth.getSession()
+        const isLoggedIn = !!data.session
+        
+        if (!isMounted) return
+        
+        console.log("Auth check result:", isLoggedIn ? "Authenticated" : "Not authenticated")
+        setIsAuthenticating(false)
+        setAuthAttempts(prev => prev + 1)
+        
+        if (!isLoggedIn && !user) {
+          setError("Please log in to view this date plan")
+          setLoading(false)
+        }
+      } catch (err) {
+        if (!isMounted) return
+        console.error("Error checking auth status:", err)
+        setIsAuthenticating(false)
+        setAuthAttempts(prev => prev + 1)
+      }
+    }
+    
+    const timeoutId = setTimeout(checkAuthStatus, 100)
+    
+    return () => {
+      isMounted = false
+      clearTimeout(timeoutId)
+    }
+  }, [supabase, user, authAttempts])
 
-  if (loading) {
+  // Fetch date plan data memoized function
+  const fetchDatePlan = useCallback(async () => {
+    try {
+      setLoading(true)
+      
+      console.log("Fetching date plan data, attempt:", authAttempts)
+      
+      // Single, direct query
+      const { data, error: fetchError } = await supabase
+        .from('date_sets')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle()
+      
+      if (fetchError) {
+        console.error("Error fetching date plan:", fetchError)
+        setError("Error fetching date plan: " + fetchError.message)
+        setLoading(false)
+        return
+      }
+      
+      if (!data) {
+        setError("Date plan not found")
+        setLoading(false)
+        return
+      }
+      
+      // Try to skip permission checking if there's cookie issues
+      // The database security rules will still protect data
+      if (user && data.user_id !== user.id) {
+        // Check for shared access
+        const { data: sharedAccess } = await supabase
+          .from('shared_date_sets')
+          .select('*')
+          .eq('date_set_id', data.id)
+          .eq('shared_with_id', user.id)
+          .eq('status', 'accepted')
+          .maybeSingle()
+          
+        if (!sharedAccess) {
+          setError("You don't have permission to view this date plan")
+          setLoading(false)
+          return
+        }
+      }
+      
+      // Handle places format
+      let places = data.places || []
+      if (typeof places === 'string') {
+        try {
+          places = JSON.parse(places)
+        } catch (e) {
+          console.error("Error parsing places:", e)
+          places = []
+        }
+      }
+      data.places = Array.isArray(places) ? places : []
+      
+      setDataFetched(data)
+    } catch (err) {
+      console.error("Error loading date plan:", err)
+      setError(`An unexpected error occurred: ${err instanceof Error ? err.message : String(err)}`)
+      setLoading(false)
+    }
+  }, [id, user, supabase]);
+
+  // Helper function to set data and prevent further fetches
+  const setDataFetched = (data: DatePlan) => {
+    setDatePlan(data)
+    setLoading(false)
+    setIsDataFetched(true)
+  }
+
+  // Main data fetching effect - only runs when auth is determined
+  useEffect(() => {
+    // Skip fetch if still authenticating
+    if (isAuthenticating) return
+    
+    // Skip if data already fetched successfully
+    if (isDataFetched || datePlan) return
+    
+    fetchDatePlan()
+  }, [isAuthenticating, isDataFetched, datePlan, fetchDatePlan])
+
+  if (loading && isAuthenticating) {
     return (
       <>
         <Header />
@@ -124,7 +197,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
         </main>
         <Footer />
       </>
-    );
+    )
   }
 
   if (error || !datePlan) {
@@ -146,7 +219,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
         </main>
         <Footer />
       </>
-    );
+    )
   }
 
   return (
@@ -161,13 +234,13 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
             </Button>
           </Link>
           
-          {datePlan && user && (
+          {datePlan && user ? (
             <ShareDateDialog 
               dateSetId={datePlan.id} 
-              shareId={datePlan.share_id} 
+              shareId={datePlan.share_id || ''} 
               userId={user.id} 
             />
-          )}
+          ) : null}
         </div>
         
         <Card className="mb-6">
@@ -238,6 +311,7 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
       </main>
       <Footer />
     </>
-  );
+  )
 }
+
 

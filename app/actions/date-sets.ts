@@ -51,7 +51,7 @@ export async function getUserDateSets(userId: string) {
   try {
     const supabase = createClient()
     
-    const { data, error } = await supabase
+        const { data, error } = await supabase
       .from('date_sets')
       .select('*')
       .eq('user_id', userId)

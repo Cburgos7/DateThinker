@@ -58,14 +58,14 @@ export function Header({ isLoggedIn, userName, avatarUrl }: HeaderProps = {}) {
     console.log("Header: Signing out")
     await signOut()
   }
-  
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center">
         <div className="mr-4 hidden md:flex">
           <Link href="/" className="mr-6 flex items-center space-x-2">
             <span className="hidden font-bold sm:inline-block">
-              DateThinker
+          DateThinker
             </span>
           </Link>
         </div>
@@ -94,25 +94,25 @@ export function Header({ isLoggedIn, userName, avatarUrl }: HeaderProps = {}) {
           </nav>
           <div className="flex items-center">
             {displayUser ? (
-              <DropdownMenu>
+            <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="flex items-center space-x-1">
-                    <User className="h-4 w-4" />
+                  <User className="h-4 w-4" />
                     <span>{displayName}</span>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => router.push('/settings')}>
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSignOut}>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Sign out</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
               <Button
                 variant="ghost"
                 size="sm"
@@ -120,7 +120,7 @@ export function Header({ isLoggedIn, userName, avatarUrl }: HeaderProps = {}) {
               >
                 Sign in
               </Button>
-            )}
+          )}
           </div>
         </div>
       </div>

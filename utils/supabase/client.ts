@@ -16,29 +16,23 @@ export function createClient() {
     console.error('Supabase URL or Anon Key is missing')
   }
 
-  console.log('🔧 Initializing Supabase client with config:', {
-    url: supabaseUrl?.substring(0, 20) + '...',
-    keyExists: !!supabaseKey,
-  })
+  console.log('🔧 Initializing Supabase client with URL:', supabaseUrl)
 
-  // Create the browser client with simpler configuration to avoid type errors
-  supabaseInstance = createBrowserClient(supabaseUrl, supabaseKey, {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-    }
-  })
+  // Create the browser client with minimal configuration
+  supabaseInstance = createBrowserClient(supabaseUrl, supabaseKey)
 
-  // Set additional cookie for the middleware to detect
-  // This is a manual way to ensure auth state is available server-side
+  // Set a simplified auth sync cookie
   supabaseInstance.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+    console.log('Auth state changed:', event, session ? `User: ${session.user.email}` : 'No session')
+    
     if (event === 'SIGNED_IN' && session) {
-      // Set a cookie that middleware can check
+      // Set a simple boolean cookie that middleware can check
       document.cookie = `sb-auth-sync=true; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+      console.log('Set sync cookie for signed-in user')
     } else if (event === 'SIGNED_OUT') {
       // Remove the cookie
       document.cookie = 'sb-auth-sync=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+      console.log('Removed sync cookie after sign-out')
     }
   });
 

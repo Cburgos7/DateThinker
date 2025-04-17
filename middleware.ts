@@ -7,6 +7,12 @@ export async function middleware(request: NextRequest) {
   const res = NextResponse.next()
   
   try {
+    // Initialize Supabase client in middleware
+    const supabase = createMiddlewareClient({ req: request, res })
+    
+    // Refresh auth session if expired
+    await supabase.auth.getSession()
+    
     // Extract auth tokens from cookies directly to check auth status
     // This bypasses the problematic JSON parsing
     const hasSessionCookie = request.cookies.has('sb-access-token') || 
@@ -22,6 +28,20 @@ export async function middleware(request: NextRequest) {
     // Consider the user authenticated if any auth indicators are present
     const isAuthenticated = hasSessionCookie || hasAuthHeader;
     
+    // Debug information for API routes
+    const isApiRoute = request.nextUrl.pathname.startsWith('/api/');
+    if (isApiRoute) {
+      console.log('Middleware API route:', { 
+        path: request.nextUrl.pathname, 
+        isAuthenticated,
+        cookies: Array.from(request.cookies.getAll()).map(c => c.name),
+        hasAuthHeader
+      });
+      
+      // For API routes, don't redirect but ensure cookies are properly set
+      return res;
+    }
+    
     // Log authentication state in middleware for debugging
     console.log('Middleware auth check:', { 
       path: request.nextUrl.pathname, 
@@ -30,6 +50,28 @@ export async function middleware(request: NextRequest) {
     
     // Get the pathname of the request
     const path = request.nextUrl.pathname
+    
+    // Redirect any /auth/* routes to /login/*
+    if (path.startsWith('/auth')) {
+      // Special case for /auth/callback and other API routes - we keep those
+      if (path.startsWith('/auth/callback') || 
+          path.startsWith('/auth/confirm') || 
+          path.startsWith('/auth/logout')) {
+        return res; // Let auth API routes pass through
+      }
+      
+      // For all other /auth/* paths, redirect to equivalent /login/* path
+      const loginPath = path.replace('/auth', '/login');
+      const redirectUrl = new URL(loginPath, request.url);
+      
+      // Copy all search parameters
+      request.nextUrl.searchParams.forEach((value, key) => {
+        redirectUrl.searchParams.set(key, value);
+      });
+      
+      console.log(`Middleware: Redirecting from ${path} to ${redirectUrl.pathname}`);
+      return NextResponse.redirect(redirectUrl);
+    }
     
     // Check for auth tokens in URL (for callbacks)
     const hasAuthTokenInUrl = request.nextUrl.hash && 
@@ -75,7 +117,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // If the user is logged in and tries to access the login page, redirect to home or previous page
-    if ((path === '/login' || path === '/auth') && isAuthenticated) {
+    if (path === '/login' && isAuthenticated) {
       console.log('Middleware: User is authenticated, redirecting from login')
       
       // Check if there's a redirectedFrom parameter to go back to
@@ -91,8 +133,7 @@ export async function middleware(request: NextRequest) {
           const refererUrl = new URL(referer)
           // Only redirect to referer if it's from the same origin and not a login page
           if (refererUrl.origin === request.nextUrl.origin && 
-              !refererUrl.pathname.includes('/login') && 
-              !refererUrl.pathname.includes('/auth')) {
+              !refererUrl.pathname.includes('/login')) {
             return NextResponse.redirect(refererUrl)
           }
         } catch (e) {

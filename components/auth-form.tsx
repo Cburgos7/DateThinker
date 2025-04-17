@@ -15,6 +15,9 @@ export function AuthForm({ redirectTo }: AuthFormProps = {}) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectedFrom = searchParams?.get('redirectedFrom') || ''
@@ -56,22 +59,28 @@ export function AuthForm({ redirectTo }: AuthFormProps = {}) {
     setMessage(null)
 
     const formData = new FormData(e.currentTarget)
-    const action = e.currentTarget.getAttribute('data-action') || 
-                   (e.nativeEvent as any).submitter?.getAttribute('formaction')
-    
     const email = formData.get('email') as string
-    const password = formData.get('password') as string
+    const passwordValue = formData.get('password') as string
     
+    // Use the mode state instead of trying to extract from form attributes
+    const action = mode
     console.log("Form submission action:", action)
 
+    // For signup, validate password confirmation
+    if (action === 'signup' && passwordValue !== confirmPassword) {
+      setError('Passwords do not match')
+      setIsLoading(false)
+      return
+    }
+
     try {
-      let result;
+      let result: { error?: string; message?: string } = {};
       
       if (action === 'login') {
         console.log("Attempting login for:", email)
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
-          password,
+          password: passwordValue,
         })
         
         if (error) {
@@ -108,20 +117,29 @@ export function AuthForm({ redirectTo }: AuthFormProps = {}) {
         }
       } else {
         console.log("Attempting signup for:", email)
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/auth/callback`,
-          },
-        })
+        // Ensure we have the origin for email redirect
+        const origin = typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || ''
         
-        if (error) {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+          password: passwordValue,
+            options: {
+            emailRedirectTo: `${origin}/login/callback?redirect=${encodeURIComponent(redirectTo || '/')}`,
+            },
+          })
+
+          if (error) {
           console.error("Signup error:", error.message)
           result = { error: error.message };
+        } else if (data?.user?.identities?.length === 0) {
+          // User already exists but is trying to sign up again
+          result = { error: 'An account with this email already exists. Please log in instead.' };
         } else {
-          console.log("Signup response:", data)
-          result = { message: 'Check your email to confirm your account' };
+          console.log("Signup successful:", data)
+          
+          // Redirect to check-email page instead of showing a message
+          router.push('/check-email?email=' + encodeURIComponent(email));
+          return;
         }
       }
 
@@ -143,13 +161,13 @@ export function AuthForm({ redirectTo }: AuthFormProps = {}) {
       <div className="w-full max-w-md space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight">
-            Sign in to your account
+            {mode === 'login' ? 'Sign in to your account' : 'Create a new account'}
           </h2>
         </div>
-        <form onSubmit={handleSubmit} data-action="login" className="mt-8 space-y-6">
-          <div className="rounded-md shadow-sm -space-y-px">
+        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="sr-only">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
               </label>
               <input
@@ -158,57 +176,105 @@ export function AuthForm({ redirectTo }: AuthFormProps = {}) {
                 type="email"
                 autoComplete="email"
                 required
-                className="relative block w-full rounded-t-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-rose-500 sm:text-sm sm:leading-6"
+                className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-rose-500 sm:text-sm sm:leading-6"
                 placeholder="Email address"
               />
             </div>
+            
             <div>
-              <label htmlFor="password" className="sr-only">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
               <input
                 id="password"
                 name="password"
                 type="password"
-                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === 'login' ? "current-password" : "new-password"}
                 required
-                className="relative block w-full rounded-b-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-rose-500 sm:text-sm sm:leading-6"
+                className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-rose-500 sm:text-sm sm:leading-6"
                 placeholder="Password"
+                minLength={6}
               />
             </div>
+            
+            {mode === 'signup' && (
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+                  Confirm Password
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                  className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-rose-500 sm:text-sm sm:leading-6"
+                  placeholder="Confirm Password"
+                  minLength={6}
+                />
+        </div>
+      )}
           </div>
 
           {error && (
             <div className="text-sm text-red-600 text-center">
               {error}
-            </div>
-          )}
+        </div>
+      )}
 
           {message && (
             <div className="text-sm text-green-600 text-center">
               {message}
-            </div>
-          )}
+                </div>
+              )}
 
           <div className="flex flex-col gap-4">
-            <Button
-              type="submit"
-              className="group relative flex w-full justify-center rounded-md bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
-              disabled={isLoading}
-            >
-              {isLoading ? "Signing in..." : "Sign in"}
-            </Button>
-
-            <Button
-              type="submit"
-              formAction="signup"
-              className="group relative flex w-full justify-center rounded-md bg-purple-500 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500"
-              disabled={isLoading}
-            >
-              {isLoading ? "Creating account..." : "Sign up"}
-            </Button>
+            {mode === 'login' ? (
+              <>
+                <Button
+                  type="submit"
+                  className="group relative flex w-full justify-center rounded-md bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Signing in..." : "Sign in"}
+                </Button>
+                
+                <div 
+                  className="group relative flex w-full justify-center rounded-md bg-purple-500 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-600 cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setMode('signup');
+                  }}
+                >
+                  Sign up
+                </div>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="submit"
+                  className="group relative flex w-full justify-center rounded-md bg-purple-500 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Creating account..." : "Sign up"}
+                </Button>
+                
+                <div
+                  className="group relative flex w-full justify-center rounded-md border border-rose-500 bg-white px-3 py-2 text-sm font-semibold text-rose-500 hover:bg-rose-50 cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setMode('login');
+                  }}
+                >
+                  Back to Sign in
+                </div>
+              </>
+            )}
           </div>
-        </form>
+          </form>
       </div>
     </div>
   )

@@ -18,16 +18,16 @@ export async function createMonthlySubscription(formData: FormData): Promise<voi
   // Validate the user is logged in
   if (!supabase) {
     console.error("Supabase client not initialized")
-    redirect("/auth?redirect=/pricing")
+    redirect("/login?redirect=/pricing")
   }
   
   const session = await supabase.auth.getSession()
   if (!session?.data?.session?.user) {
-    redirect("/auth?redirect=/pricing")
+    redirect("/login?redirect=/pricing")
   }
 
   if (!user) {
-    redirect("/auth?redirect=/pricing")
+    redirect("/login?redirect=/pricing")
   }
 
   // Get or create Stripe customer
@@ -75,16 +75,16 @@ export async function createLifetimeMembership(formData: FormData): Promise<void
   // Validate the user is logged in
   if (!supabase) {
     console.error("Supabase client not initialized")
-    redirect("/auth?redirect=/pricing")
+    redirect("/login?redirect=/pricing")
   }
   
   const session = await supabase.auth.getSession()
   if (!session?.data?.session?.user) {
-    redirect("/auth?redirect=/pricing")
+    redirect("/login?redirect=/pricing")
   }
 
   if (!user) {
-    redirect("/auth?redirect=/pricing")
+    redirect("/login?redirect=/pricing")
   }
 
   // Get or create Stripe customer
