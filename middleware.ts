@@ -45,7 +45,8 @@ export async function middleware(request: NextRequest) {
     // Log authentication state in middleware for debugging
     console.log('Middleware auth check:', { 
       path: request.nextUrl.pathname, 
-      isAuthenticated 
+      isAuthenticated,
+      cookies: Array.from(request.cookies.getAll()).map(c => c.name)
     });
     
     // Get the pathname of the request
@@ -108,12 +109,15 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
 
-    // Handle button navigation action
+    // Handle button navigation action - only if user is NOT authenticated
     if (isButtonNavigation && !isAuthenticated) {
       const targetPath = buttonAction === 'get-started' || buttonAction === 'make-date' ? '/make-date' : '/'
-      const redirectUrl = new URL('/login', request.url)
-      redirectUrl.searchParams.set('redirectedFrom', targetPath)
-      return NextResponse.redirect(redirectUrl)
+      console.log(`Middleware: Button navigation to ${targetPath}, authenticated: ${isAuthenticated}`);
+      if (!isAuthenticated) {
+        const redirectUrl = new URL('/login', request.url)
+        redirectUrl.searchParams.set('redirectedFrom', targetPath)
+        return NextResponse.redirect(redirectUrl)
+      }
     }
 
     // If the user is logged in and tries to access the login page, redirect to home or previous page
@@ -123,6 +127,7 @@ export async function middleware(request: NextRequest) {
       // Check if there's a redirectedFrom parameter to go back to
       const redirectedFrom = request.nextUrl.searchParams.get('redirectedFrom')
       if (redirectedFrom) {
+        console.log(`Middleware: Redirecting to ${redirectedFrom} from login`);
         return NextResponse.redirect(new URL(redirectedFrom, request.url))
       }
       
@@ -134,13 +139,16 @@ export async function middleware(request: NextRequest) {
           // Only redirect to referer if it's from the same origin and not a login page
           if (refererUrl.origin === request.nextUrl.origin && 
               !refererUrl.pathname.includes('/login')) {
+            console.log(`Middleware: Redirecting to referer ${refererUrl.pathname}`);
             return NextResponse.redirect(refererUrl)
           }
         } catch (e) {
           // Invalid referer URL, just continue to home
+          console.error('Middleware: Invalid referer URL', e);
         }
       }
       
+      console.log('Middleware: No valid redirect destination, going to home');
       return NextResponse.redirect(new URL('/', request.url))
     }
 
