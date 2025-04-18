@@ -179,13 +179,6 @@ export function HomeClient() {
             ))}
           </div>
         </div>
-
-        {/* Caption overlay for current image */}
-        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10">
-          <div className="bg-black/50 text-white px-6 py-3 rounded-full text-sm backdrop-blur-sm shadow-md">
-            {dateImages[currentImageIndex].caption}
-          </div>
-        </div>
       </main>
       
       {/* How it works section */}
