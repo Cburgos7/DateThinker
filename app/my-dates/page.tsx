@@ -242,7 +242,7 @@ export default function MyDatesPage() {
           <div className="p-4 bg-yellow-100 rounded mb-4">
             <p>Please log in to view your date sets</p>
             <div className="mt-4">
-              <Link href="/auth">
+              <Link href="/login">
                 <Button>Log In</Button>
               </Link>
             </div>

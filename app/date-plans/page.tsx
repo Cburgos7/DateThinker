@@ -13,7 +13,7 @@ export default async function DatePlansPage() {
   const user = await getCurrentUser()
 
   if (!user) {
-    redirect("/auth?redirect=/date-plans")
+    redirect("/login?redirect=/date-plans")
   }
 
   // Get user's date sets

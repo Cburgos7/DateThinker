@@ -313,7 +313,7 @@ export default function Page() {
   const handleToggleFavorite = async (place: PlaceResult) => {
     // If user is not logged in, redirect to login page
     if (!user) {
-      router.push("/auth?redirect=/")
+      router.push("/login?redirect=/")
       return
     }
 
@@ -342,13 +342,7 @@ export default function Page() {
   }
 
   const handleSaveDatePlan = () => {
-    // If user is not logged in, redirect to login page
-    if (!user) {
-      router.push("/auth?redirect=/")
-      return
-    }
-
-    // Open the save date modal
+    // Open the save date modal directly without authentication check
     setIsDateModalOpen(true)
   }
 
@@ -390,7 +384,7 @@ export default function Page() {
             <div className="text-center">
               <h2 className="text-2xl font-semibold mb-4">Authentication Check Failed</h2>
               <p className="text-gray-600 mb-4">We're having trouble verifying your session.</p>
-              <Button onClick={() => router.push('/auth?showForm=true&manualSignIn=true')} className="mb-4">
+              <Button onClick={() => router.push('/login?showForm=true&manualSignIn=true')} className="mb-4">
                 Sign In Again
               </Button>
               {showBypassOption && (
@@ -533,22 +527,22 @@ export default function Page() {
               {error && <div className="text-center text-red-500 animate-appear">{error}</div>}
             </form>
 
+            {/* Stand-alone Save Date Plan button */}
+            <div className="flex justify-center">
+              <Button
+                onClick={handleSaveDatePlan}
+                className="bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Date Plan
+              </Button>
+            </div>
+
             {/* Middle ad banner - shown when no results yet */}
             {Object.keys(results).length === 0 && <AdBanner adSlot="7890123456" adFormat="rectangle" />}
 
             {Object.keys(results).length > 0 && (
               <>
-                {/* Save Date Plan button */}
-                <div className="flex justify-center">
-                  <Button
-                    onClick={handleSaveDatePlan}
-                    className="bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Date Plan
-                  </Button>
-                </div>
-
                 <div className="grid gap-4 md:gap-6">
                   {results.restaurant && (
                     <ResultCard

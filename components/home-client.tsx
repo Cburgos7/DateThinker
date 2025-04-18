@@ -141,7 +141,7 @@ export function HomeClient() {
                   asChild
                   className="border-rose-500 text-rose-500 hover:bg-rose-50"
                 >
-                  <Link href="/auth?showForm=true&manualSignIn=true">Sign In</Link>
+                  <Link href="/login?showForm=true&manualSignIn=true">Sign In</Link>
                 </Button>
               )}
             </div>
@@ -280,7 +280,7 @@ export function HomeClient() {
             </Button>
           ) : (
             <Button
-              onClick={() => router.push('/auth?showForm=true&manualSignIn=true')}
+              onClick={() => router.push('/login?showForm=true&manualSignIn=true')}
               size="lg" 
               className="bg-white text-rose-500 hover:bg-rose-100 px-8 py-6 text-lg"
             >

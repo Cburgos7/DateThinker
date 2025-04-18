@@ -20,13 +20,13 @@ export default function FavoritesPage() {
       try {
         const currentUser = await getCurrentUser()
         if (!currentUser) {
-          redirect("/auth?redirect=/favorites")
+          redirect("/login?redirect=/favorites")
         }
         setUser(currentUser)
         
         const currentUserWithSubscription = await getUserWithSubscription()
         if (!currentUserWithSubscription) {
-          redirect("/auth?redirect=/favorites")
+          redirect("/login?redirect=/favorites")
         }
         setUserWithSubscription(currentUserWithSubscription)
         
@@ -37,7 +37,7 @@ export default function FavoritesPage() {
         }
       } catch (error) {
         console.error("Error fetching data:", error)
-        redirect("/auth?redirect=/favorites")
+        redirect("/login?redirect=/favorites")
       } finally {
         setIsLoading(false)
       }

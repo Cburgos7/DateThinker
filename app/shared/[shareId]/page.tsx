@@ -243,7 +243,7 @@ export default function SharedDatePage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('redirectAfterLogin', window.location.href);
     }
-    router.push('/auth');
+    router.push('/login');
   }
 
   if (isLoading) {

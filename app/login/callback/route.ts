@@ -23,14 +23,14 @@ export async function GET(request: NextRequest) {
       if (code) {
         // Exchange code for session
         await supabase.auth.exchangeCodeForSession(code)
-        console.log("Auth callback: Exchanged code for session")
+        console.log("Login callback: Exchanged code for session")
       } else if (accessToken && refreshToken) {
         // Set session with tokens
         await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
-        console.log("Auth callback: Set session with tokens")
+        console.log("Login callback: Set session with tokens")
       }
     } catch (error) {
-      console.error("Auth callback error:", error)
+      console.error("Login callback error:", error)
     }
   }
   
@@ -60,6 +60,6 @@ export async function GET(request: NextRequest) {
     }
   }
   
-  console.log("Auth callback redirecting to:", redirectTo)
+  console.log("Login callback redirecting to:", redirectTo)
   return NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
 } 

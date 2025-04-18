@@ -23,18 +23,18 @@ export default function AccountPage() {
       try {
         const currentUser = await getCurrentUser()
         if (!currentUser) {
-          redirect("/auth?redirect=/account")
+          redirect("/login?redirect=/account")
         }
         setUser(currentUser)
         
         const currentUserWithSubscription = await getUserWithSubscription()
         if (!currentUserWithSubscription) {
-          redirect("/auth?redirect=/account")
+          redirect("/login?redirect=/account")
         }
         setUserWithSubscription(currentUserWithSubscription)
       } catch (error) {
         console.error("Error fetching user:", error)
-        redirect("/auth?redirect=/account")
+        redirect("/login?redirect=/account")
       } finally {
         setIsLoading(false)
       }
