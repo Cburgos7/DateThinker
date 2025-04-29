@@ -8,6 +8,7 @@ import { CalendarDays, Clock, Share2, Download } from "lucide-react"
 import Link from "next/link"
 import * as dateFns from "date-fns"
 import { redirect } from "next/navigation"
+import { AdBanner } from "@/components/ads/ad-banner"
 
 export default async function DatePlansPage() {
   const user = await getCurrentUser()
@@ -28,6 +29,11 @@ export default async function DatePlansPage() {
           <h1 className="text-3xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500">
             Your Date Plans
           </h1>
+
+          {/* Ad Banner */}
+          <div className="mb-6">
+            <AdBanner adSlot="date-plans-top" adFormat="leaderboard" />
+          </div>
 
           {dateSets.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-lg">

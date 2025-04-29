@@ -12,6 +12,7 @@ import * as dateFns from "date-fns"
 import { ShareDateDialog } from '@/components/share-date-dialog'
 import { createClient } from "@/utils/supabase/client"
 import { useAuth } from "@/contexts/auth-context"
+import { AdBanner } from '@/components/ads/ad-banner'
 
 interface DatePlanPageProps {
   params: {
@@ -241,6 +242,11 @@ export default function DatePlanPage({ params }: DatePlanPageProps) {
               userId={user.id} 
             />
           ) : null}
+        </div>
+        
+        {/* Ad Banner */}
+        <div className="mb-6">
+          <AdBanner adSlot="date-plan-detail" adFormat="leaderboard" />
         </div>
         
         <Card className="mb-6">

@@ -170,6 +170,50 @@ export async function updateUserSubscription(
       return false
     }
 
+    console.log(`Updating subscription for user ${userId} to ${subscriptionStatus}`, {
+      userId,
+      subscriptionStatus,
+      subscriptionExpiry,
+      hasStripeCustomerId: !!stripeCustomerId
+    });
+
+    // First check if the user profile exists
+    const { data: existingProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, subscription_status")
+      .eq("id", userId)
+      .single();
+    
+    if (profileError && profileError.code !== 'PGRST116') {
+      console.error(`Error checking if profile exists for user ${userId}:`, profileError);
+      return false;
+    }
+
+    if (!existingProfile) {
+      console.log(`Creating new profile for user ${userId} with subscription status ${subscriptionStatus}`);
+      
+      // Profile doesn't exist, create it
+      const { error: insertError } = await supabase
+        .from("profiles")
+        .insert({
+          id: userId,
+          subscription_status: subscriptionStatus,
+          subscription_expiry: subscriptionExpiry,
+          stripe_customer_id: stripeCustomerId,
+        });
+        
+      if (insertError) {
+        console.error(`Error creating profile for user ${userId}:`, insertError);
+        return false;
+      }
+      
+      console.log(`Successfully created profile for user ${userId} with ${subscriptionStatus} subscription`);
+      return true;
+    }
+    
+    // Profile exists, update it
+    console.log(`Updating existing profile for user ${userId} from ${existingProfile.subscription_status} to ${subscriptionStatus}`);
+    
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -177,17 +221,18 @@ export async function updateUserSubscription(
         subscription_expiry: subscriptionExpiry,
         stripe_customer_id: stripeCustomerId,
       })
-      .eq("id", userId)
+      .eq("id", userId);
 
     if (error) {
-      console.error("Error updating subscription:", error)
-      return false
+      console.error(`Error updating subscription for user ${userId}:`, error);
+      return false;
     }
 
-    return true
+    console.log(`Successfully updated user ${userId} subscription to ${subscriptionStatus}`);
+    return true;
   } catch (error) {
-    console.error("Error in updateUserSubscription:", error)
-    return false
+    console.error(`Error in updateUserSubscription for user ${userId}:`, error);
+    return false;
   }
 }
 

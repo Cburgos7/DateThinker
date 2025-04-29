@@ -33,6 +33,7 @@ import { SaveDateModal } from "@/components/save-date-modal"
 import Image from "next/image"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { type User } from "@supabase/supabase-js"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // Add this at the top of the file
 const BYPASS_AUTH_CHECK = typeof window !== 'undefined' ? 
@@ -423,9 +424,6 @@ export default function Page() {
               <p className="text-muted-foreground text-base md:text-lg">Discover the perfect date spots in your city</p>
             </div>
 
-            {/* Top ad banner */}
-            <AdBanner adSlot="3456789012" adFormat="horizontal" />
-
             <form onSubmit={handleSearch} className="space-y-6 md:space-y-8">
               <div className="relative group">
                 <Input
@@ -527,6 +525,11 @@ export default function Page() {
               {error && <div className="text-center text-red-500 animate-appear">{error}</div>}
             </form>
 
+            {/* Ad Banner */}
+            <div className="text-center my-6">
+              <AdBanner adSlot="make-date-top" adFormat="leaderboard" />
+            </div>
+
             {/* Stand-alone Save Date Plan button */}
             <div className="flex justify-center">
               <Button
@@ -597,7 +600,9 @@ export default function Page() {
                 </div>
 
                 {/* Bottom ad banner - after results */}
-                <AdBanner adSlot="5678901234" adFormat="horizontal" />
+                <div className="text-center my-6">
+                  <AdBanner adSlot="5678901234" adFormat="leaderboard" />
+                </div>
               </>
             )}
           </div>

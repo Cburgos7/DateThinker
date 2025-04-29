@@ -95,15 +95,19 @@ export async function getOrCreateCustomer(userId: string, email: string, name?: 
   try {
     const stripe = getStripe()
 
-    // Search for existing customer
+    // Special case for unknown user ID - just use email to find or create customer
+    const isUnknownUser = userId === "unknown" || userId === "form-checkout" || userId === "manual-checkout";
+
+    // Search for existing customer by email
     const customers = await stripe.customers.list({
       email,
       limit: 1,
     })
 
     if (customers.data.length > 0) {
-      // Update the customer with the user ID if needed
-      if (!customers.data[0].metadata.userId) {
+      // Update the customer with the user ID if needed (and if we have a valid one)
+      if (!customers.data[0].metadata.userId && !isUnknownUser) {
+        console.log(`Updating existing customer ${customers.data[0].id} with userId ${userId}`);
         await stripe.customers.update(customers.data[0].id, {
           metadata: { userId },
         })
@@ -112,11 +116,18 @@ export async function getOrCreateCustomer(userId: string, email: string, name?: 
     }
 
     // Create new customer
-    const customer = await stripe.customers.create({
+    console.log(`Creating new Stripe customer for ${isUnknownUser ? 'unknown user' : userId} with email ${email}`);
+    const customerData: any = {
       email,
       name: name || undefined,
-      metadata: { userId },
-    })
+    };
+    
+    // Only add userId metadata if we have a valid one
+    if (!isUnknownUser) {
+      customerData.metadata = { userId };
+    }
+    
+    const customer = await stripe.customers.create(customerData);
 
     return customer.id
   } catch (error) {

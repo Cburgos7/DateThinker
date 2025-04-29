@@ -91,7 +91,8 @@ export async function middleware(request: NextRequest) {
       '/favorites', 
       '/account', 
       '/settings', 
-      '/date-plans'
+      '/date-plans',
+      '/pricing'
     ]
     const isProtectedRoute = protectedRoutes.some(route => 
       path === route || path.startsWith(route + '/')

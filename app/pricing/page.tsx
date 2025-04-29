@@ -5,12 +5,119 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Check } from "lucide-react"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
+import { getStripe } from "@/lib/stripe"
+import { cookies } from "next/headers"
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
+
+// Extract user info from auth token cookie
+function extractUserFromCookie(cookieValue: string): { id: string, email: string } | null {
+  try {
+    // Auth token format is typically "base64-<JSON>"
+    const parts = cookieValue.split('-');
+    if (parts.length !== 2) return null;
+    
+    // Decode base64 JSON part
+    const jsonStr = Buffer.from(parts[1], 'base64').toString('utf-8');
+    const data = JSON.parse(jsonStr);
+    
+    // Extract user info
+    if (data?.user?.id && data?.user?.email) {
+      return {
+        id: data.user.id,
+        email: data.user.email
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error extracting user from cookie:', error);
+    return null;
+  }
+}
 
 export default async function PricingPage() {
-  const user = await getCurrentUser()
-  const userWithSubscription = await getUserWithSubscription()
-  const isAuthenticated = !!user
-  const subscriptionStatus = userWithSubscription?.subscription_status || "free"
+  // Since middleware redirects unauthenticated users, we can assume authentication is valid
+  // Get user information directly from cookies
+  const cookieStore = cookies();
+  const authCookie = cookieStore.get('sb-bmrdzmhmslgntayhbrsn-auth-token');
+  
+  // Extract user info from cookie directly
+  let userId = '';
+  let userEmail = '';
+  let subscriptionStatus = "free";
+  
+  // Try direct cookie extraction first
+  if (authCookie?.value) {
+    const user = extractUserFromCookie(authCookie.value);
+    if (user) {
+      userId = user.id;
+      userEmail = user.email;
+      console.log("Extracted user info from cookie:", { userId, userEmail });
+    }
+  }
+  
+  // If direct extraction failed, try server component client
+  if (!userId) {
+    try {
+      const supabase = createServerComponentClient({ cookies });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        userId = session.user.id;
+        userEmail = session.user.email || '';
+        console.log("Got user from Supabase session:", { userId, userEmail });
+      }
+    } catch (error) {
+      console.error("Error getting session:", error);
+    }
+  }
+  
+  // As a fallback, try the standard methods
+  if (!userId) {
+    const userWithSubscription = await getUserWithSubscription();
+    if (userWithSubscription) {
+      userId = userWithSubscription.id;
+      userEmail = userWithSubscription.email;
+      subscriptionStatus = userWithSubscription.subscription_status;
+      console.log("Got user from subscription info:", { userId, userEmail });
+    }
+  }
+  
+  // If we got this far, the user is authenticated (middleware handled it)
+  const isAuthenticated = true;
+
+  async function getDirectCheckoutUrl() {
+    const user = await getCurrentUser();
+    // Hard-code the checkout parameters for the demo
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const stripe = getStripe();
+    const priceId = process.env.STRIPE_SUBSCRIPTION_PRICE_ID;
+    
+    if (!priceId) {
+      console.error("Missing Stripe price ID");
+      return null;
+    }
+    
+    // Create a direct checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: "subscription",
+      success_url: `${baseUrl}/account?success=subscription`,
+      cancel_url: `${baseUrl}/pricing?canceled=true`,
+      client_reference_id: user?.id, // Store user ID if available
+      customer_email: user?.email, // Pre-fill email if available
+      billing_address_collection: "auto",
+      metadata: {
+        userId: user?.id || "manual-checkout"
+      }
+    });
+    
+    return session.url;
+  }
 
   return (
     <>
@@ -105,21 +212,30 @@ export default async function PricingPage() {
               </ul>
             </CardContent>
             <CardFooter>
-              <form action={createMonthlySubscription} className="w-full">
-                <Button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
-                  disabled={!isAuthenticated || subscriptionStatus === "premium" || subscriptionStatus === "lifetime"}
-                >
-                  {!isAuthenticated
-                    ? "Sign in to Subscribe"
-                    : subscriptionStatus === "premium"
+              {isAuthenticated ? (
+                <form action={createMonthlySubscription}>
+                  <input type="hidden" name="userId" value={userId} />
+                  <input type="hidden" name="userEmail" value={userEmail} />
+                  <Button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-purple-600 to-rose-600 hover:from-purple-700 hover:to-rose-700"
+                    disabled={subscriptionStatus === "premium" || subscriptionStatus === "lifetime"}
+                  >
+                    {subscriptionStatus === "premium"
                       ? "Current Plan"
                       : subscriptionStatus === "lifetime"
                         ? "You have Lifetime"
                         : "Subscribe Now"}
+                  </Button>
+                </form>
+              ) : (
+                <Button
+                  onClick={() => window.location.href = '/login?redirectTo=/pricing'}
+                  className="w-full bg-gradient-to-r from-purple-600 to-rose-600 hover:from-purple-700 hover:to-rose-700"
+                >
+                  Login to Subscribe
                 </Button>
-              </form>
+              )}
             </CardFooter>
           </Card>
 
@@ -159,17 +275,17 @@ export default async function PricingPage() {
             </CardContent>
             <CardFooter>
               <form action={createLifetimeMembership} className="w-full">
+                <input type="hidden" name="userId" value={userId} />
+                <input type="hidden" name="userEmail" value={userEmail} />
                 <Button
                   type="submit"
                   variant="outline"
                   className="w-full border-rose-500 text-rose-500 hover:bg-rose-50"
-                  disabled={!isAuthenticated || subscriptionStatus === "lifetime"}
+                  disabled={subscriptionStatus === "lifetime"}
                 >
-                  {!isAuthenticated
-                    ? "Sign in to Purchase"
-                    : subscriptionStatus === "lifetime"
-                      ? "Current Plan"
-                      : "Get Lifetime Access"}
+                  {subscriptionStatus === "lifetime"
+                    ? "Current Plan"
+                    : "Get Lifetime Access"}
                 </Button>
               </form>
             </CardFooter>
@@ -207,6 +323,15 @@ export default async function PricingPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="mt-8 text-center">
+          <a 
+            href={`/api/direct-checkout${userEmail ? `?email=${encodeURIComponent(userEmail)}` : ''}`}
+            className="text-sm text-muted-foreground hover:underline"
+          >
+            Having trouble? Try direct checkout
+          </a>
         </div>
       </div>
       <Footer />

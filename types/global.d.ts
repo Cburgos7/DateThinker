@@ -1,10 +1,14 @@
 interface Window {
-  adsbygoogle: Array<Record<string, unknown>>;
+  adsbygoogle: {
+    push: (params: {}) => void;
+  }[];
 }
 
 declare global {
   interface Window {
-    adsbygoogle: Array<Record<string, unknown>>;
+    adsbygoogle: {
+      push: (params: {}) => void;
+    }[];
   }
 }
 
