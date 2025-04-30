@@ -30,9 +30,16 @@ export async function createMonthlySubscription(formData: FormData): Promise<voi
       // As a fallback, try to get user with the robust method
       const user = await robustGetUser();
       
-      if (!user?.id) {
-        throw new Error("User information missing. Please try the direct checkout link below.");
+      if (!user?.id || !user?.email) {
+        console.error("No user information available");
+        redirect('/login?redirectTo=/pricing');
+        return;
       }
+    }
+
+    if (!SUBSCRIPTION_PRICE_ID) {
+      console.error("Stripe subscription price ID not configured");
+      throw new Error("Subscription configuration error. Please contact support.");
     }
     
     // Create a checkout without requiring user details
@@ -44,7 +51,8 @@ export async function createMonthlySubscription(formData: FormData): Promise<voi
     const customerId = await getOrCreateCustomer(userId || "unknown", userEmail || "unknown");
     
     if (!customerId) {
-      throw new Error("Failed to create or retrieve Stripe customer");
+      console.error("Failed to create/retrieve Stripe customer");
+      throw new Error("Unable to process subscription. Please try again or contact support.");
     }
     
     // Set up minimal parameters for Stripe checkout
@@ -65,23 +73,30 @@ export async function createMonthlySubscription(formData: FormData): Promise<voi
       metadata: {
         userId: userId || "form-checkout",
         email: userEmail || ""
-      }
+      },
+      allow_promotion_codes: true
     })
 
-    if (!checkoutSession || !checkoutSession.url) {
-      throw new Error("Failed to create checkout session")
+    if (!checkoutSession?.url) {
+      console.error("No checkout URL in session response");
+      throw new Error("Unable to start checkout. Please try again.");
     }
 
     console.log("Redirecting to Stripe checkout:", checkoutSession.url)
-    checkoutUrl = checkoutSession.url;
+    redirect(checkoutSession.url)
   } catch (error) {
     console.error("Error creating checkout:", error)
-    throw new Error("Failed to start checkout process: " + (error instanceof Error ? error.message : String(error)))
-  }
-  
-  // Only redirect if we successfully got a checkout URL
-  if (checkoutUrl) {
-    redirect(checkoutUrl)
+    
+    // Handle specific error cases
+    if (error instanceof Error) {
+      if (error.message.includes("authentication")) {
+        redirect('/login?redirectTo=/pricing');
+        return;
+      }
+    }
+    
+    // For other errors, redirect to pricing with error
+    redirect('/pricing?error=checkout_failed');
   }
 }
 
