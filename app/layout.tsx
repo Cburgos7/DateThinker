@@ -4,6 +4,10 @@ import "./globals.css"
 import { Providers } from "./providers"
 import Script from "next/script"
 
+// Use 'force-dynamic' to prevent static generation
+// This is the key setting that will fix the cookie errors
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {

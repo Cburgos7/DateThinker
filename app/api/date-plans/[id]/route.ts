@@ -2,6 +2,9 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
+// Mark this route as dynamic because it uses cookies
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   const id = params.id
   console.log("API: Fetching date plan with ID:", id)

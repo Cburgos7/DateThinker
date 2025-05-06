@@ -1,15 +1,8 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm install",
   "framework": "nextjs",
   "regions": ["iad1"],
   "env": {
-    "NEXT_TELEMETRY_DISABLED": "1"
-  },
-  "functions": {
-    "app/api/**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 10
-    }
+    "NEXT_RUNTIME": "nodejs",
+    "NEXT_STATIC_OPTIMIZATION": "false"
   }
 }
