@@ -5,19 +5,14 @@ import { getStripe, getOrCreateCustomer } from "@/lib/stripe"
 const SUBSCRIPTION_PRICE_ID = process.env.STRIPE_SUBSCRIPTION_PRICE_ID || ""
 const LIFETIME_PRICE_ID = process.env.STRIPE_LIFETIME_PRICE_ID || ""
 
-export async function GET(req: NextRequest) {
-  // Get email from query parameter
-  const url = new URL(req.url)
-  const email = url.searchParams.get('email')
-  const type = url.searchParams.get('type') || 'monthly'
-  
-  if (!email) {
-    return NextResponse.json({ error: "Email is required for direct checkout" }, { status: 400 })
-  }
-  
+export async function POST(req: NextRequest) {
   try {
-    // Use a placeholder userId for direct checkout
-    const userId = "direct-checkout"
+    const data = await req.json()
+    const { userId, userEmail, type } = data
+    
+    if (!userId || !userEmail) {
+      return NextResponse.json({ error: "Missing user information" }, { status: 400 })
+    }
     
     // Determine which price to use
     const priceId = type === 'lifetime' ? LIFETIME_PRICE_ID : SUBSCRIPTION_PRICE_ID
@@ -32,7 +27,7 @@ export async function GET(req: NextRequest) {
     const cancelUrl = `${baseUrl}/pricing?canceled=true`
     
     // Get or create Stripe customer
-    const customerId = await getOrCreateCustomer(userId, email)
+    const customerId = await getOrCreateCustomer(userId, userEmail)
     
     if (!customerId) {
       return NextResponse.json({ error: "Failed to create/retrieve Stripe customer" }, { status: 500 })
@@ -55,7 +50,7 @@ export async function GET(req: NextRequest) {
       billing_address_collection: "auto",
       metadata: {
         userId,
-        email
+        email: userEmail
       },
       allow_promotion_codes: true
     })
@@ -64,12 +59,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "No checkout URL in session response" }, { status: 500 })
     }
 
-    console.log("Created direct checkout session, redirecting to:", checkoutSession.url)
+    console.log("Created checkout session, returning URL:", checkoutSession.url)
     
-    // Redirect directly to checkout URL
-    return NextResponse.redirect(checkoutSession.url)
+    // Return the URL to the client
+    return NextResponse.json({ url: checkoutSession.url })
   } catch (error) {
-    console.error("Error creating direct checkout:", error)
+    console.error("Error creating checkout:", error)
     return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 })
   }
 } 
