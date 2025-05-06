@@ -75,7 +75,31 @@ export function CheckoutButton({
 
       // Redirect to Stripe Checkout
       if (data.url) {
-        window.location.href = data.url;
+        console.log('Redirecting to Stripe checkout URL:', data.url);
+        
+        // Try location assign instead of href for more reliable redirect
+        try {
+          window.location.assign(data.url);
+          // Fallback - if assign doesn't work, try href after a small delay
+          setTimeout(() => {
+            if (window.location.href !== data.url) {
+              console.log('Fallback redirect with href');
+              window.location.href = data.url;
+            }
+          }, 100);
+        } catch (error) {
+          console.error('Redirect error:', error);
+          // Show the URL as a clickable link if redirect fails
+          toast.error(
+            <div>
+              <p>Automatic redirect failed. Click below to go to checkout:</p>
+              <a href={data.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">
+                Go to Stripe Checkout
+              </a>
+            </div>,
+            { duration: 10000 }
+          );
+        }
       } else {
         throw new Error("No checkout URL received");
       }
