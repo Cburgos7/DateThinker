@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { sanitizeInput } from "@/lib/api-utils"
 
+// Mark this route as dynamic since it uses request.url
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     // Get the query parameter
