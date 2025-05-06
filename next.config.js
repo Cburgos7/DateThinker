@@ -11,6 +11,11 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   
+  // Ensure CSS modules work properly
+  optimizeCss: true,
+  reactStrictMode: true,
+  swcMinify: true,
+  
   // Minimal experimental options - only what's needed
   experimental: {
     serverActions: true,

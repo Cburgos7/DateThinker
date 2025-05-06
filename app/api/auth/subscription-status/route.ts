@@ -7,7 +7,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    // More robust cookie handling
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({ 
+      cookies: () => cookieStore
+    });
     
     // Get the user session
     const { data: { session } } = await supabase.auth.getSession();
