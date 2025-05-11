@@ -2,6 +2,9 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
+// Mark this route as dynamic - it uses cookies which can't be statically generated
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     // Get cookies safely
