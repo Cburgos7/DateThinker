@@ -67,19 +67,54 @@ export async function POST(req: NextRequest) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session
         console.log(`Processing checkout.session.completed: ${session.id}`)
+        console.log(`Session mode: ${session.mode}`)
+        console.log(`Session customer: ${session.customer}`)
+        console.log(`Session metadata:`, session.metadata)
+        console.log(`Session customer_email: ${session.customer_email}`)
+
+        // Special debugging for the production customer
+        if (session.customer === 'cus_SDpQARjYnPmLBB') {
+          console.log(`🔍 DEBUGGING PRODUCTION CUSTOMER: ${session.customer}`)
+          console.log(`🔍 Session metadata:`, JSON.stringify(session.metadata, null, 2))
+          console.log(`🔍 Session customer_email:`, session.customer_email)
+        }
 
         try {
           // Retrieve the subscription details
           if (session.mode === "subscription" && session.subscription) {
             const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
+            console.log(`Retrieved subscription: ${subscription.id}`)
+
+            // Check if customer exists
+            if (!subscription.customer) {
+              console.log(`⚠️ No customer associated with subscription ${subscription.id} - likely a test event`)
+              return NextResponse.json({ received: true, note: "Test event with no customer" })
+            }
 
             // Get the customer metadata to find the user ID
             const customerResponse = await stripe.customers.retrieve(subscription.customer as string)
 
             if (!customerResponse.deleted) {
               const customer = customerResponse as Stripe.Customer
+              console.log(`Customer ID: ${customer.id}`)
+              console.log(`Customer email: ${customer.email}`)
+              console.log(`Customer metadata:`, customer.metadata)
+              
+              // Special debugging for the production customer
+              if (customer.id === 'cus_SDpQARjYnPmLBB') {
+                console.log(`🔍 PRODUCTION CUSTOMER FOUND!`)
+                console.log(`🔍 Customer metadata:`, JSON.stringify(customer.metadata, null, 2))
+                console.log(`🔍 Customer email:`, customer.email)
+                console.log(`🔍 Subscription:`, subscription.id)
+                console.log(`🔍 Subscription status:`, subscription.status)
+                console.log(`🔍 Subscription period end:`, new Date(subscription.current_period_end * 1000).toISOString())
+              }
+              
               let userId = customer.metadata?.userId;
               let customerEmail = customer.email;
+              
+              console.log(`Initial userId from customer metadata: ${userId}`)
+              console.log(`Customer email: ${customerEmail}`)
               
               // If userId is missing in metadata but we have an email, try to find the user by email
               if (!userId && customerEmail) {
@@ -97,6 +132,7 @@ export async function POST(req: NextRequest) {
                       userId: userId 
                     }
                   });
+                  console.log(`Updated customer metadata with userId`);
                 }
               }
               
@@ -116,6 +152,7 @@ export async function POST(req: NextRequest) {
                       userId: userId 
                     }
                   });
+                  console.log(`Updated customer metadata with userId from session email`);
                 }
               }
               
@@ -129,14 +166,55 @@ export async function POST(req: NextRequest) {
                 
                 console.log(`Setting premium subscription for user ${userId} until ${expiryDate.toISOString()}`)
 
+                // Special debugging for the production customer
+                if (customer.id === 'cus_SDpQARjYnPmLBB') {
+                  console.log(`🔍 ATTEMPTING SUPABASE UPDATE FOR PRODUCTION USER!`)
+                  console.log(`🔍 userId: ${userId}`)
+                  console.log(`🔍 status: premium`)
+                  console.log(`🔍 expiry: ${expiryDate.toISOString()}`)
+                  console.log(`🔍 customerId: ${customer.id}`)
+                }
+
                 // Update the user's subscription status
-                await updateUserSubscription(userId, "premium", expiryDate.toISOString(), customer.id)
+                const updateResult = await updateUserSubscription(userId, "premium", expiryDate.toISOString(), customer.id)
+                console.log(`Update result: ${updateResult}`)
+                
+                if (updateResult) {
+                  console.log(`✅ Successfully updated Supabase for user ${userId}`)
+                  
+                  // Extra debugging for production
+                  if (customer.id === 'cus_SDpQARjYnPmLBB') {
+                    console.log(`🎉 PRODUCTION DATABASE UPDATE COMPLETED!`)
+                  }
+                } else {
+                  console.error(`❌ Failed to update Supabase for user ${userId}`)
+                  
+                  // Extra debugging for production
+                  if (customer.id === 'cus_SDpQARjYnPmLBB') {
+                    console.error(`💥 PRODUCTION DATABASE UPDATE FAILED!`)
+                  }
+                }
               } else {
-                console.log(`Could not find a user to associate with this subscription. Email: ${customerEmail || session.customer_email || 'none'}, metadata:`, customer.metadata);
+                console.log(`❌ Could not find a user to associate with this subscription. Email: ${customerEmail || session.customer_email || 'none'}, metadata:`, customer.metadata);
+                
+                // Extra debugging for production
+                if (customer.id === 'cus_SDpQARjYnPmLBB') {
+                  console.error(`💥 PRODUCTION USER LOOKUP FAILED!`)
+                  console.error(`💥 customerEmail: ${customerEmail}`)
+                  console.error(`💥 session.customer_email: ${session.customer_email}`)
+                  console.error(`💥 customer.metadata:`, customer.metadata)
+                }
               }
             }
           } else if (session.mode === "payment") {
             // Handle one-time payment (lifetime)
+            
+            // Check if customer exists
+            if (!session.customer) {
+              console.log(`⚠️ No customer associated with payment session ${session.id} - likely a test event`)
+              return NextResponse.json({ received: true, note: "Test event with no customer" })
+            }
+            
             const customerResponse = await stripe.customers.retrieve(session.customer as string)
 
             if (!customerResponse.deleted) {

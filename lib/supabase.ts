@@ -82,6 +82,33 @@ export const supabase = (() => {
   }
 })()
 
+// Create a service role client for admin operations (bypasses RLS)
+export const supabaseAdmin = (() => {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.warn("⚠️ Admin Supabase client not available - missing service role key")
+      return null
+    }
+
+    console.log("🔧 Creating Supabase admin client with service role key")
+    const adminClient = createClient<Database>(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+
+    console.log("✅ Supabase admin client initialized")
+    return adminClient
+  } catch (error) {
+    console.error("❌ Error creating admin client:", error)
+    return null
+  }
+})()
+
 // Types for user data with subscription info
 export type UserWithSubscription = {
   id: string
@@ -165,7 +192,10 @@ export async function updateUserSubscription(
   stripeCustomerId: string | null = null,
 ): Promise<boolean> {
   try {
-    if (!supabase) {
+    // Use admin client for webhook operations to bypass RLS
+    const client = supabaseAdmin || supabase
+    
+    if (!client) {
       console.warn("Supabase client not initialized - missing environment variables")
       return false
     }
@@ -174,11 +204,12 @@ export async function updateUserSubscription(
       userId,
       subscriptionStatus,
       subscriptionExpiry,
-      hasStripeCustomerId: !!stripeCustomerId
+      hasStripeCustomerId: !!stripeCustomerId,
+      usingAdminClient: !!supabaseAdmin
     });
 
     // First check if the user profile exists
-    const { data: existingProfile, error: profileError } = await supabase
+    const { data: existingProfile, error: profileError } = await client
       .from("profiles")
       .select("id, subscription_status")
       .eq("id", userId)
@@ -193,7 +224,7 @@ export async function updateUserSubscription(
       console.log(`Creating new profile for user ${userId} with subscription status ${subscriptionStatus}`);
       
       // Profile doesn't exist, create it
-      const { error: insertError } = await supabase
+      const { error: insertError } = await client
         .from("profiles")
         .insert({
           id: userId,
@@ -207,32 +238,37 @@ export async function updateUserSubscription(
         return false;
       }
       
-      console.log(`Successfully created profile for user ${userId} with ${subscriptionStatus} subscription`);
+      console.log(`✅ Successfully created profile for user ${userId} with ${subscriptionStatus} subscription`);
       return true;
     }
     
     // Profile exists, update it
     console.log(`Updating existing profile for user ${userId} from ${existingProfile.subscription_status} to ${subscriptionStatus}`);
-    
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        subscription_status: subscriptionStatus,
-        subscription_expiry: subscriptionExpiry,
-        stripe_customer_id: stripeCustomerId,
-      })
-      .eq("id", userId);
 
-    if (error) {
-      console.error(`Error updating subscription for user ${userId}:`, error);
-      return false;
+    const updateData: any = {
+      subscription_status: subscriptionStatus,
+      subscription_expiry: subscriptionExpiry,
     }
 
-    console.log(`Successfully updated user ${userId} subscription to ${subscriptionStatus}`);
-    return true;
+    if (stripeCustomerId) {
+      updateData.stripe_customer_id = stripeCustomerId
+    }
+
+    const { error: updateError } = await client
+      .from("profiles")
+      .update(updateData)
+      .eq("id", userId)
+
+    if (updateError) {
+      console.error(`Error updating profile for user ${userId}:`, updateError)
+      return false
+    }
+
+    console.log(`✅ Successfully updated profile for user ${userId} to ${subscriptionStatus} subscription`)
+    return true
   } catch (error) {
-    console.error(`Error in updateUserSubscription for user ${userId}:`, error);
-    return false;
+    console.error(`Error in updateUserSubscription for user ${userId}:`, error)
+    return false
   }
 }
 
