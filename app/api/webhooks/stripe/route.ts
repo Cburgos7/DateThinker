@@ -332,6 +332,7 @@ export async function POST(req: NextRequest) {
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription
         console.log(`Processing customer.subscription.updated: ${subscription.id}`)
+        console.log(`Subscription status: ${subscription.status}`)
 
         try {
           const customerResponse = await stripe.customers.retrieve(subscription.customer as string)
@@ -360,10 +361,12 @@ export async function POST(req: NextRequest) {
             }
             
             if (userId) {
-              // Check if cancel_at_period_end is true
-              if (subscription.cancel_at_period_end) {
+              // Check subscription status and handle accordingly
+              if (subscription.status === 'canceled' || subscription.status === 'incomplete_expired' || subscription.status === 'unpaid') {
+                console.log(`Subscription ${subscription.id} is ${subscription.status}. Downgrading user ${userId} to free.`)
+                await updateUserSubscription(userId, "free", null, customer.id)
+              } else if (subscription.cancel_at_period_end) {
                 console.log(`Subscription ${subscription.id} scheduled to cancel at period end: ${new Date(subscription.current_period_end * 1000).toISOString()}`)
-                
                 // Don't change the status yet, just log that it's scheduled to cancel
               } else if (subscription.status === 'active') {
                 // Subscription is active (or reactivated)
@@ -372,6 +375,8 @@ export async function POST(req: NextRequest) {
                 
                 console.log(`Subscription is active. Updating to premium until ${expiryDate.toISOString()}`)
                 await updateUserSubscription(userId, "premium", expiryDate.toISOString(), customer.id)
+              } else {
+                console.log(`Unhandled subscription status: ${subscription.status} for subscription ${subscription.id}`)
               }
             }
           }

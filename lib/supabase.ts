@@ -193,7 +193,7 @@ export async function updateUserSubscription(
 ): Promise<boolean> {
   try {
     // Use admin client for webhook operations to bypass RLS
-    const client = supabaseAdmin || supabase
+    const client = supabaseAdmin //|| supabase
     
     if (!client) {
       console.warn("Supabase client not initialized - missing environment variables")
