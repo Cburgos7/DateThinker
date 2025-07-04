@@ -10,7 +10,7 @@ import Image from 'next/image'
 
 interface MultipleVenuesSectionProps {
   title: string
-  category: 'restaurants' | 'activities' | 'drinks' | 'outdoors'
+  category: 'restaurants' | 'activities' | 'outdoors'
   venues: PlaceResult[]
   onAddMore: () => void
   onRemove: (venueId: string) => void

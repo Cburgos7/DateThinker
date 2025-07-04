@@ -9,10 +9,6 @@ import {
   Search,
   Heart,
   Sparkles,
-  TreePine,
-  Utensils,
-  Dumbbell,
-  Wine,
   MapPin,
   Star,
   Save,
@@ -38,6 +34,8 @@ import { useAuth } from "@/contexts/auth-context"
 import { getPersonalizedRecommendations, getRandomRecommendation, type RecommendationResult } from "@/lib/recommendation-engine"
 import { getUserPreferences } from "@/app/actions/user-preferences"
 import { MultipleVenuesSection } from "@/components/multiple-venues-section"
+import { SequentialDatePlanner } from "@/components/sequential-date-planner"
+import { VENUE_TYPE_OPTIONS } from "@/lib/types"
 
 // Using consistent auth via useAuth hook
 
@@ -51,10 +49,10 @@ export default function Page() {
   const [favorites, setFavorites] = useState<string[]>([])
   const [userSubscriptionStatus, setUserSubscriptionStatus] = useState<string | null>(null)
   const [filters, setFilters] = useState({
-    restaurants: true,
+    restaurants: false,
     activities: false,
-    drinks: false,
     outdoors: false,
+    events: false,
   })
   const [results, setResults] = useState<SearchResults>({})
   const [isLoading, setIsLoading] = useState(false)
@@ -63,16 +61,15 @@ export default function Page() {
   const [multipleVenues, setMultipleVenues] = useState<{
     restaurants: PlaceResult[]
     activities: PlaceResult[]
-    drinks: PlaceResult[]
     outdoors: PlaceResult[]
   }>({
     restaurants: [],
     activities: [],
-    drinks: [],
     outdoors: []
   })
   const [userPreferences, setUserPreferences] = useState<any>(null)
   const [isExploring, setIsExploring] = useState(false)
+  const [planningMode, setPlanningMode] = useState<'quick' | 'sequential'>('quick')
 
   const [refreshing, setRefreshing] = useState<{
     restaurant?: boolean
@@ -279,7 +276,6 @@ export default function Page() {
         setMultipleVenues({
           restaurants: data.restaurant ? [data.restaurant] : [],
           activities: data.activity ? [data.activity] : [],
-          drinks: data.drink ? [data.drink] : [],
           outdoors: data.outdoor ? [data.outdoor] : []
         })
       } else {
@@ -290,7 +286,6 @@ export default function Page() {
         setMultipleVenues({
           restaurants: [],
           activities: [],
-          drinks: [],
           outdoors: []
         })
       }
@@ -381,12 +376,12 @@ export default function Page() {
     const randomFilters = {
       restaurants: Math.random() > 0.3, // 70% chance of including restaurants
       activities: Math.random() > 0.5, // 50% chance of including activities
-      drinks: Math.random() > 0.5, // 50% chance of including drinks
       outdoors: Math.random() > 0.5, // 50% chance of outdoor options
+      events: Math.random() > 0.5, // 50% chance of including events
     }
 
     // Ensure at least one filter is selected
-    if (!randomFilters.restaurants && !randomFilters.activities && !randomFilters.drinks && !randomFilters.outdoors) {
+    if (!randomFilters.restaurants && !randomFilters.activities && !randomFilters.outdoors && !randomFilters.events) {
       randomFilters.restaurants = true
     }
 
@@ -421,7 +416,6 @@ export default function Page() {
       const categoriesWithResults = [
         recommendations.restaurants.length > 0,
         recommendations.activities.length > 0,
-        recommendations.drinks.length > 0,
         recommendations.outdoors.length > 0
       ].filter(Boolean).length
 
@@ -439,22 +433,21 @@ export default function Page() {
         
         if (recommendations.restaurants.length > 0) {
           newResults.restaurant = recommendations.restaurants[0]
+          setMultipleVenues(prev => ({ ...prev, restaurants: recommendations.restaurants }))
         }
         if (recommendations.activities.length > 0) {
           newResults.activity = recommendations.activities[0]
-        }
-        if (recommendations.drinks.length > 0) {
-          newResults.drink = recommendations.drinks[0]
+          setMultipleVenues(prev => ({ ...prev, activities: recommendations.activities }))
         }
         if (recommendations.outdoors.length > 0) {
           newResults.outdoor = recommendations.outdoors[0]
+          setMultipleVenues(prev => ({ ...prev, outdoors: recommendations.outdoors }))
         }
 
         setResults(newResults)
         setMultipleVenues({
           restaurants: [],
           activities: [],
-          drinks: [],
           outdoors: []
         })
       }
@@ -463,8 +456,8 @@ export default function Page() {
       setFilters({
         restaurants: recommendations.restaurants.length > 0,
         activities: recommendations.activities.length > 0,
-        drinks: recommendations.drinks.length > 0,
         outdoors: recommendations.outdoors.length > 0,
+        events: false,
       })
 
     } catch (error) {
@@ -582,7 +575,7 @@ export default function Page() {
     }
   }
 
-  const handleAddMoreVenues = (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors') => {
+  const handleAddMoreVenues = (category: 'restaurants' | 'activities' | 'outdoors') => {
     // Create an empty slot that users can fill manually or with surprise me
     const emptySlot = {
       id: `empty-${Date.now()}`,
@@ -590,7 +583,7 @@ export default function Page() {
       address: '',
       rating: 0,
       price: 0,
-      category: category.slice(0, -1) as 'restaurant' | 'activity' | 'drink' | 'outdoor',
+      category: category.slice(0, -1) as 'restaurant' | 'activity' | 'outdoor',
       photoUrl: '',
       openNow: undefined,
       isEmpty: true
@@ -602,14 +595,14 @@ export default function Page() {
     }))
   }
 
-  const handleRemoveVenue = (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors', venueId: string) => {
+  const handleRemoveVenue = (category: 'restaurants' | 'activities' | 'outdoors', venueId: string) => {
     setMultipleVenues(prev => ({
       ...prev,
       [category]: prev[category].filter(venue => venue.id !== venueId)
     }))
   }
 
-  const handleRandomizeMultipleCategory = async (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors') => {
+  const handleRandomizeMultipleCategory = async (category: 'restaurants' | 'activities' | 'outdoors') => {
     if (!userPreferences || !city) return
 
     setIsLoading(true)
@@ -617,7 +610,6 @@ export default function Page() {
       const categoryMap = {
         restaurants: 'restaurant',
         activities: 'activity', 
-        drinks: 'drink',
         outdoors: 'outdoor'
       } as const
 
@@ -642,7 +634,7 @@ export default function Page() {
     }
   }
 
-  const handleFillEmptySlot = async (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors', venueId: string, venueName: string) => {
+  const handleFillEmptySlot = async (category: 'restaurants' | 'activities' | 'outdoors', venueId: string, venueName: string) => {
     if (!city || !venueName.trim()) return
 
     setIsLoading(true)
@@ -651,7 +643,6 @@ export default function Page() {
       const categoryFilter = {
         restaurants: category === 'restaurants',
         activities: category === 'activities',
-        drinks: category === 'drinks',
         outdoors: category === 'outdoors',
       }
 
@@ -673,8 +664,7 @@ export default function Page() {
 
       const data = await response.json()
       const newVenue = data[category === 'restaurants' ? 'restaurant' : 
-                          category === 'activities' ? 'activity' : 
-                          category === 'drinks' ? 'drink' : 'outdoor']
+                          category === 'activities' ? 'activity' : 'outdoor']
 
       if (newVenue) {
         setMultipleVenues(prev => ({
@@ -691,7 +681,7 @@ export default function Page() {
           address: `${city}`,
           rating: 0,
           price: 0,
-          category: category.slice(0, -1) as 'restaurant' | 'activity' | 'drink' | 'outdoor',
+          category: category.slice(0, -1) as 'restaurant' | 'activity' | 'outdoor',
           photoUrl: '',
           openNow: undefined,
         }
@@ -710,7 +700,7 @@ export default function Page() {
     }
   }
 
-  const handleRandomizeEmptySlot = async (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors', venueId: string) => {
+  const handleRandomizeEmptySlot = async (category: 'restaurants' | 'activities' | 'outdoors', venueId: string) => {
     if (!city) return
 
     setIsLoading(true)
@@ -718,7 +708,6 @@ export default function Page() {
       const categoryFilter = {
         restaurants: category === 'restaurants',
         activities: category === 'activities',
-        drinks: category === 'drinks',
         outdoors: category === 'outdoors',
       }
 
@@ -744,8 +733,7 @@ export default function Page() {
 
       const data = await response.json()
       const newVenue = data[category === 'restaurants' ? 'restaurant' : 
-                          category === 'activities' ? 'activity' : 
-                          category === 'drinks' ? 'drink' : 'outdoor']
+                          category === 'activities' ? 'activity' : 'outdoor']
 
       if (newVenue) {
         setMultipleVenues(prev => ({
@@ -772,9 +760,6 @@ export default function Page() {
     if (results.activity && !newMultipleVenues.activities.find(v => v.id === results.activity!.id)) {
       newMultipleVenues.activities = [...newMultipleVenues.activities, results.activity]
     }
-    if (results.drink && !newMultipleVenues.drinks.find(v => v.id === results.drink!.id)) {
-      newMultipleVenues.drinks = [...newMultipleVenues.drinks, results.drink]
-    }
     if (results.outdoor && !newMultipleVenues.outdoors.find(v => v.id === results.outdoor!.id)) {
       newMultipleVenues.outdoors = [...newMultipleVenues.outdoors, results.outdoor]
     }
@@ -792,13 +777,11 @@ export default function Page() {
     // Include current single results
     if (results.restaurant) places.push(results.restaurant)
     if (results.activity) places.push(results.activity)
-    if (results.drink) places.push(results.drink)
     if (results.outdoor) places.push(results.outdoor)
 
     // Include multiple venues if any, but filter out empty slots
     places.push(...multipleVenues.restaurants.filter(venue => !venue.isEmpty))
     places.push(...multipleVenues.activities.filter(venue => !venue.isEmpty))
-    places.push(...multipleVenues.drinks.filter(venue => !venue.isEmpty))
     places.push(...multipleVenues.outdoors.filter(venue => !venue.isEmpty))
 
     // Remove duplicates based on place ID
@@ -888,7 +871,7 @@ export default function Page() {
                   onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, restaurants: pressed }))}
                   className="data-[state=on]:bg-rose-200 data-[state=on]:text-rose-800"
                 >
-                  <Utensils className="h-4 w-4 mr-2" />
+                  <span className="text-sm mr-2">🍽️</span>
                   Restaurants
                 </Toggle>
                 <Toggle
@@ -896,28 +879,26 @@ export default function Page() {
                   onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, activities: pressed }))}
                   className="data-[state=on]:bg-purple-200 data-[state=on]:text-purple-800"
                 >
-                  <Dumbbell className="h-4 w-4 mr-2" />
+                  <span className="text-sm mr-2">🎯</span>
                   Activities
-                </Toggle>
-                <Toggle
-                  pressed={filters.drinks}
-                  onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, drinks: pressed }))}
-                  className="data-[state=on]:bg-blue-200 data-[state=on]:text-blue-800"
-                >
-                  <Wine className="h-4 w-4 mr-2" />
-                  Drinks
                 </Toggle>
                 <Toggle
                   pressed={filters.outdoors}
                   onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, outdoors: pressed }))}
                   className="data-[state=on]:bg-emerald-200 data-[state=on]:text-emerald-800"
                 >
-                  <TreePine className="h-4 w-4 mr-2" />
+                  <span className="text-sm mr-2">🌳</span>
                   Outdoors
                 </Toggle>
+                <Toggle
+                  pressed={filters.events}
+                  onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, events: pressed }))}
+                  className="data-[state=on]:bg-yellow-200 data-[state=on]:text-yellow-800"
+                >
+                  <span className="text-sm mr-2">🎭</span>
+                  Events
+                </Toggle>
               </div>
-
-
 
               <div className="flex flex-col gap-3">
                 <div className="flex gap-4">
@@ -971,12 +952,37 @@ export default function Page() {
               {error && <div className="text-center text-red-500 animate-appear">{error}</div>}
             </form>
 
-
+            {/* Planning Mode Selector */}
+            <div className="flex justify-center">
+              <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+                <button
+                  onClick={() => setPlanningMode('quick')}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                    planningMode === 'quick'
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  )}
+                >
+                  Quick Search
+                </button>
+                <button
+                  onClick={() => setPlanningMode('sequential')}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                    planningMode === 'sequential'
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  )}
+                >
+                  Sequential Planner
+                </button>
+              </div>
+            </div>
 
             {/* Multiple Venue Mode Indicator */}
             {(multipleVenues.restaurants.length > 0 || 
               multipleVenues.activities.length > 0 || 
-              multipleVenues.drinks.length > 0 || 
               multipleVenues.outdoors.length > 0) && (
               <div className="text-center my-4">
                 <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-100 to-blue-100 rounded-full">
@@ -988,18 +994,28 @@ export default function Page() {
               </div>
             )}
 
-            {/* Stand-alone Save Date Plan button */}
-            <div className="flex justify-center">
-              <Button
-                onClick={handleSaveDatePlan}
-                className="bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Save Date Plan
-              </Button>
-            </div>
-
-
+            {/* Conditional Content Based on Planning Mode */}
+            {planningMode === 'sequential' ? (
+              <SequentialDatePlanner
+                city={city}
+                placeId={placeId}
+                onSave={(plan) => {
+                  console.log('Sequential plan saved:', plan)
+                  // Handle saving the sequential plan
+                }}
+              />
+            ) : (
+              <>
+                {/* Stand-alone Save Date Plan button */}
+                <div className="flex justify-center">
+                  <Button
+                    onClick={handleSaveDatePlan}
+                    className="bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Date Plan
+                  </Button>
+                </div>
 
             {Object.keys(results).length > 0 && (
               <>
@@ -1018,8 +1034,6 @@ export default function Page() {
                     />
                   )}
 
-
-
                   {results.activity && (
                     <ResultCard
                       title="Activity"
@@ -1029,19 +1043,6 @@ export default function Page() {
                       onRefresh={() => handleRefresh("activity")}
                       onRandomize={() => handleRandomizeCategory("activity")}
                       isRefreshing={refreshing.activity}
-                      isLoggedIn={!!user}
-                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    />
-                  )}
-                  {results.drink && (
-                    <ResultCard
-                      title="Drinks"
-                      result={results.drink}
-                      onFavorite={() => handleToggleFavorite(results.drink!)}
-                      isFavorite={favorites.includes(results.drink.id)}
-                      onRefresh={() => handleRefresh("drink")}
-                      onRandomize={() => handleRandomizeCategory("drink")}
-                      isRefreshing={refreshing.drink}
                       isLoggedIn={!!user}
                       isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
                     />
@@ -1062,10 +1063,9 @@ export default function Page() {
                 </div>
 
                 {/* Add transition to multiple venues - only show if not already in multiple mode */}
-                {(results.restaurant || results.activity || results.drink || results.outdoor) && 
+                {(results.restaurant || results.activity || results.outdoor) && 
                  (multipleVenues.restaurants.length === 0 && 
                   multipleVenues.activities.length === 0 && 
-                  multipleVenues.drinks.length === 0 && 
                   multipleVenues.outdoors.length === 0) && (
                   <div className="text-center my-6">
                     <Button
@@ -1078,14 +1078,12 @@ export default function Page() {
                   </div>
                 )}
 
-
               </>
             )}
 
             {/* Multiple Venues Sections */}
             {(multipleVenues.restaurants.length > 0 || 
               multipleVenues.activities.length > 0 || 
-              multipleVenues.drinks.length > 0 || 
               multipleVenues.outdoors.length > 0) && (
               <div className="space-y-6">
 
@@ -1102,7 +1100,7 @@ export default function Page() {
                     isLoading={isLoading}
                     isLoggedIn={!!user}
                     isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<Utensils className="h-4 w-4 text-rose-500" />}
+                    categoryIcon={<span className="text-sm text-rose-500">🍽️</span>}
                     categoryColor="bg-rose-500 hover:bg-rose-600"
                   />
                 )}
@@ -1120,26 +1118,8 @@ export default function Page() {
                     isLoading={isLoading}
                     isLoggedIn={!!user}
                     isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<Dumbbell className="h-4 w-4 text-purple-500" />}
+                    categoryIcon={<span className="text-sm text-purple-500">🎯</span>}
                     categoryColor="bg-purple-500 hover:bg-purple-600"
-                  />
-                )}
-
-                {multipleVenues.drinks.length > 0 && (
-                  <MultipleVenuesSection
-                    title="Drinks & Bars"
-                    category="drinks"
-                    venues={multipleVenues.drinks}
-                    onAddMore={() => handleAddMoreVenues('drinks')}
-                    onRemove={(venueId) => handleRemoveVenue('drinks', venueId)}
-                    onRandomize={() => handleRandomizeMultipleCategory('drinks')}
-                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('drinks', venueId, venueName)}
-                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('drinks', venueId)}
-                    isLoading={isLoading}
-                    isLoggedIn={!!user}
-                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<Wine className="h-4 w-4 text-blue-500" />}
-                    categoryColor="bg-blue-500 hover:bg-blue-600"
                   />
                 )}
 
@@ -1156,12 +1136,14 @@ export default function Page() {
                     isLoading={isLoading}
                     isLoggedIn={!!user}
                     isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<TreePine className="h-4 w-4 text-emerald-500" />}
+                    categoryIcon={<span className="text-sm text-emerald-500">🌳</span>}
                     categoryColor="bg-emerald-500 hover:bg-emerald-600"
                   />
                 )}
 
               </div>
+            )}
+              </>
             )}
           </div>
         </div>
@@ -1206,13 +1188,11 @@ function ResultCard({
   const getCategoryIcon = () => {
     switch (result.category) {
       case "restaurant":
-        return <Utensils className="h-4 w-4 text-rose-500" />
+        return <span className="text-sm text-rose-500">🍽️</span>
       case "activity":
-        return <Dumbbell className="h-4 w-4 text-purple-500" />
-      case "drink":
-        return <Wine className="h-4 w-4 text-blue-500" />
+        return <span className="text-sm text-purple-500">🎯</span>
       case "outdoor":
-        return <TreePine className="h-4 w-4 text-emerald-500" />
+        return <span className="text-sm text-emerald-500">🌳</span>
       default:
         return null
     }
@@ -1306,7 +1286,7 @@ function ResultCard({
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center">
               <Star className="h-4 w-4 text-yellow-500 mr-1" />
-              <span className="text-sm">{result.rating.toFixed(1)}</span>
+              <span className="text-sm">{result.rating?.toFixed(1) || 'N/A'}</span>
             </div>
             <div className="text-sm text-muted-foreground">
               {Array.from({ length: result.price }).map((_, i) => (
