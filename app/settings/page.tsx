@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@/utils/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -11,23 +11,22 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { User, Bell, Shield, Trash2, Save } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function SettingsPage() {
-  const [user, setUser] = useState<any>(null)
+  const { user, isLoading: isLoadingUser } = useAuth()
   const [profile, setProfile] = useState<any>(null)
+  const [userSubscriptionStatus, setUserSubscriptionStatus] = useState<string>("free")
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [fullName, setFullName] = useState("")
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [pushNotifications, setPushNotifications] = useState(false)
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
 
   useEffect(() => {
     async function fetchUserData() {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        setUser(user)
-        
         if (user?.id) {
           // Get profile data
           const { data: profile } = await supabase
@@ -41,17 +40,30 @@ export default function SettingsPage() {
             setFullName(profile.full_name || "")
             setEmailNotifications(profile.email_notifications ?? true)
             setPushNotifications(profile.push_notifications ?? false)
+            setUserSubscriptionStatus(profile.subscription_status || "free")
           }
         }
       } catch (error) {
         console.error("Error fetching user data:", error)
+        // Fallback to API route
+        try {
+          const response = await fetch("/api/auth/subscription-status")
+          const data = await response.json()
+          if (data.authenticated) {
+            setUserSubscriptionStatus(data.subscription_status || "free")
+          }
+        } catch (apiError) {
+          console.error("API fallback failed:", apiError)
+        }
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchUserData()
-  }, [supabase])
+    if (!isLoadingUser) {
+      fetchUserData()
+    }
+  }, [user, supabase, isLoadingUser])
 
   const handleSaveProfile = async () => {
     if (!user?.id) return
@@ -108,7 +120,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (isLoading) {
+  if (isLoadingUser || isLoading) {
     return (
       <>
         <Header />
@@ -237,16 +249,16 @@ export default function SettingsPage() {
                   <div className="flex items-center space-x-2 mt-1">
                     <Badge
                       className={
-                        profile?.subscription_status === "premium"
+                        userSubscriptionStatus === "premium"
                           ? "bg-purple-500"
-                          : profile?.subscription_status === "lifetime"
+                          : userSubscriptionStatus === "lifetime"
                             ? "bg-rose-500"
                             : "bg-gray-500"
                       }
                     >
-                      {profile?.subscription_status === "premium"
+                      {userSubscriptionStatus === "premium"
                         ? "Premium"
-                        : profile?.subscription_status === "lifetime"
+                        : userSubscriptionStatus === "lifetime"
                           ? "Lifetime"
                           : "Free"}
                     </Badge>
