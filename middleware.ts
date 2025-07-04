@@ -1,32 +1,32 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { type NextRequest } from 'next/server'
+import { updateSession } from '@/utils/supabase/middleware'
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-  // Create a response object to modify
-  const res = NextResponse.next()
-  
   try {
-    // Initialize Supabase client in middleware
-    const supabase = createMiddlewareClient({ req: request, res })
+    // First, update the session using the official Supabase pattern
+    const supabaseResponse = await updateSession(request)
     
-    // Refresh auth session if expired
-    await supabase.auth.getSession()
+    // Create a server client to check authentication
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            // We don't need to set cookies here since updateSession handles it
+          },
+        },
+      }
+    )
     
-    // Extract auth tokens from cookies directly to check auth status
-    // This bypasses the problematic JSON parsing
-    const hasSessionCookie = request.cookies.has('sb-access-token') || 
-                            request.cookies.has('sb-refresh-token') ||
-                            request.cookies.has('supabase-auth-token') ||
-                            // Also check our custom sync cookie
-                            request.cookies.has('sb-auth-sync');
-                            
-    // Check for token in authorization header as fallback
-    const authHeader = request.headers.get('authorization');
-    const hasAuthHeader = authHeader && authHeader.startsWith('Bearer ');
-    
-    // Consider the user authenticated if any auth indicators are present
-    const isAuthenticated = hasSessionCookie || hasAuthHeader;
+    // Get the user to check authentication status
+    const { data: { user } } = await supabase.auth.getUser()
+    const isAuthenticated = !!user
     
     // Debug information for API routes
     const isApiRoute = request.nextUrl.pathname.startsWith('/api/');
@@ -35,11 +35,11 @@ export async function middleware(request: NextRequest) {
         path: request.nextUrl.pathname, 
         isAuthenticated,
         cookies: Array.from(request.cookies.getAll()).map(c => c.name),
-        hasAuthHeader
+        userEmail: user?.email
       });
       
       // For API routes, don't redirect but ensure cookies are properly set
-      return res;
+      return supabaseResponse;
     }
     
     // Log authentication state in middleware for debugging
@@ -58,7 +58,7 @@ export async function middleware(request: NextRequest) {
       if (path.startsWith('/auth/callback') || 
           path.startsWith('/auth/confirm') || 
           path.startsWith('/auth/logout')) {
-        return res; // Let auth API routes pass through
+        return supabaseResponse; // Let auth API routes pass through
       }
       
       // For all other /auth/* paths, redirect to equivalent /login/* path
@@ -81,13 +81,15 @@ export async function middleware(request: NextRequest) {
 
     // If there are auth tokens in the URL, don't redirect
     if (hasAuthTokenInUrl) {
-      return res
+      return supabaseResponse
     }
 
     // Define protected routes
     const protectedRoutes = [
       '/make-date', 
       '/my-dates', 
+      '/my-date-sets',
+      '/my-favorite-dates',
       '/favorites', 
       '/account', 
       '/settings', 
@@ -153,12 +155,12 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/', request.url))
     }
 
-    return res
+    return supabaseResponse
   } catch (error) {
     console.error('Middleware error:', error)
     // In case of any error, allow the request to proceed
     // This prevents users from being stuck if authentication fails
-    return res
+    return NextResponse.next()
   }
 }
 

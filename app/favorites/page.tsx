@@ -30,11 +30,9 @@ export default function FavoritesPage() {
         }
         setUserWithSubscription(currentUserWithSubscription)
         
-        if (currentUserWithSubscription.subscription_status === "premium" || 
-            currentUserWithSubscription.subscription_status === "lifetime") {
-          const userFavorites = await getUserFavorites(currentUser.id)
-          setFavorites(userFavorites)
-        }
+        // Allow all users to view their favorites
+        const userFavorites = await getUserFavorites(currentUser.id)
+        setFavorites(userFavorites)
       } catch (error) {
         console.error("Error fetching data:", error)
         redirect("/login?redirect=/favorites")
@@ -54,32 +52,7 @@ export default function FavoritesPage() {
     return null
   }
 
-  // Check if user has premium access
-  if (userWithSubscription.subscription_status !== "premium" && 
-      userWithSubscription.subscription_status !== "lifetime") {
-    return (
-      <div className="container mx-auto px-4 py-16">
-        <div className="max-w-3xl mx-auto">
-          <Card>
-            <CardHeader>
-              <CardTitle>Premium Feature</CardTitle>
-              <CardDescription>
-                Favorites are only available for premium subscribers.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4">
-                Upgrade your account to save your favorite places and access them anytime.
-              </p>
-              <Button asChild>
-                <a href="/account">Upgrade Now</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
-  }
+  // Allow all users to view their favorites - no premium restriction needed
 
   return (
     <div className="container mx-auto px-4 py-16">

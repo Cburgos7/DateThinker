@@ -31,23 +31,22 @@ import { getCurrentUser } from "@/lib/supabase"
 import { checkIsFavorite, toggleFavorite } from "@/app/actions/favorites"
 import { SaveDateModal } from "@/components/save-date-modal"
 import Image from "next/image"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@/utils/supabase/client"
 import { type User } from "@supabase/supabase-js"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/contexts/auth-context"
 
-// Add this at the top of the file
-const BYPASS_AUTH_CHECK = typeof window !== 'undefined' ? 
-                         window.localStorage.getItem('bypass_auth_check') === 'true' ||
-                         window.sessionStorage.getItem('bypass_auth_check') === 'true' :
-                         false;
+// Using consistent auth via useAuth hook
 
 export default function Page() {
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  // Remove old supabase instance - we'll create clients as needed
+  const { user, isLoading: isLoadingUser } = useAuth()
   const [city, setCity] = useState("")
   const [placeId, setPlaceId] = useState<string | undefined>(undefined)
   const [priceRange, setPriceRange] = useState(0) // 0 means no price filter
   const [favorites, setFavorites] = useState<string[]>([])
+  const [userSubscriptionStatus, setUserSubscriptionStatus] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     restaurants: true,
     activities: false,
@@ -57,11 +56,7 @@ export default function Page() {
   const [results, setResults] = useState<SearchResults>({})
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoadingUser, setIsLoadingUser] = useState(true)
   const [isDateModalOpen, setIsDateModalOpen] = useState(false)
-  const [authCheckFailed, setAuthCheckFailed] = useState(false)
-  const [showBypassOption, setShowBypassOption] = useState(false)
 
   const [refreshing, setRefreshing] = useState<{
     restaurant?: boolean
@@ -70,31 +65,51 @@ export default function Page() {
     outdoor?: boolean
   }>({})
 
-  // Simplified user fetch effect
+  // Fetch user subscription status when user changes
   useEffect(() => {
-    let mounted = true
-
-    async function fetchUser() {
+    async function fetchSubscriptionStatus() {
+      console.log("🔄 Starting subscription status fetch...")
+      console.log("🔍 Auth context user:", user?.email, user?.id)
+      
+      // Always use server-side API to bypass cookie parsing issues
+      console.log("🌐 Using server-side API to bypass cookie parsing issues...")
+      if (user?.id) {
+        console.log("✅ User detected in auth context:", user.email)
+        console.log("🔍 User ID:", user.id)
+      } else {
+        console.log("❌ No user in auth context, but trying server-side anyway...")
+      }
+      
+      // Use server-side API to bypass corrupted cookie parsing
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (mounted) {
-          setUser(user)
-          setIsLoadingUser(false)
+        const response = await fetch('/api/auth/subscription-status', {
+          method: 'GET',
+          credentials: 'include' // Include cookies
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log("🌐 Server-side subscription result:", data)
+          
+          if (data.authenticated && data.subscription_status) {
+            setUserSubscriptionStatus(data.subscription_status)
+            console.log("✅ Server-side subscription status set:", data.subscription_status)
+          } else {
+            console.log("❌ Server-side: Not authenticated or no subscription")
+            setUserSubscriptionStatus("free")
+          }
+        } else {
+          console.log("❌ Server-side API failed:", response.status)
+          setUserSubscriptionStatus(null)
         }
-      } catch (error) {
-        console.error("Error fetching user:", error)
-        if (mounted) {
-          setIsLoadingUser(false)
-        }
+      } catch (serverError) {
+        console.error("❌ Server-side API error:", serverError)
+        setUserSubscriptionStatus(null)
       }
     }
 
-    fetchUser()
-
-    return () => {
-      mounted = false
-    }
-  }, [])
+    fetchSubscriptionStatus()
+  }, [user])
 
   // Time-based theming
   useEffect(() => {
@@ -109,26 +124,44 @@ export default function Page() {
     }
   }, [])
 
-  // Check if Places are in favorites
+  // Check if Places are in favorites using server-side API
   useEffect(() => {
     async function checkFavorites() {
       if (!user || !results) return
 
-      const newFavorites: string[] = []
-      for (const [key, place] of Object.entries(results)) {
-        if (place) {
-          try {
-            const isFavorite = await checkIsFavorite(place.id)
-            if (isFavorite) {
-              newFavorites.push(place.id)
-            }
-          } catch (error) {
-            console.error(`Error checking if ${key} is favorite:`, error)
+      try {
+        // Get all place IDs from results
+        const placeIds: string[] = []
+        Object.values(results).forEach(place => {
+          if (place) {
+            placeIds.push(place.id)
           }
+        })
+        
+        if (placeIds.length === 0) return
+        
+        console.log("🔍 Checking favorites for places:", placeIds)
+        
+        const response = await fetch('/api/favorites/check', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ placeIds }),
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log("✅ Favorites check result:", data.favorites)
+          setFavorites(data.favorites || [])
+        } else {
+          console.error("❌ Failed to check favorites:", response.status)
+          setFavorites([])
         }
+      } catch (error) {
+        console.error("❌ Error checking favorites:", error)
+        setFavorites([])
       }
-
-      setFavorites(newFavorites)
     }
 
     if (user) {
@@ -312,21 +345,66 @@ export default function Page() {
   }
 
   const handleToggleFavorite = async (place: PlaceResult) => {
+    console.log("❤️ Toggling favorite for:", place.name, "| User:", user?.email, "| Subscription:", userSubscriptionStatus)
+    
     // If user is not logged in, redirect to login page
     if (!user) {
+      console.log("❌ No user, redirecting to login")
       router.push("/login?redirect=/")
       return
     }
 
-    // Toggle favorite
+    // Toggle favorite using server-side API to bypass RLS issues
     try {
-      const result = await toggleFavorite(place)
-
-      if (result.success) {
-        setFavorites((prev) => (result.isFavorite ? [...prev, place.id] : prev.filter((id) => id !== place.id)))
+      console.log("❤️ Toggling favorite via API:", place.name)
+      
+      const response = await fetch('/api/favorites/toggle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ place }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("❌ API Error:", errorData)
+        throw new Error(errorData.error || 'Failed to toggle favorite')
+      }
+      
+      const result = await response.json()
+      console.log("✅ API Success:", result)
+      
+      // Update local state based on API response
+      if (result.isFavorite) {
+        setFavorites((prev) => [...prev, place.id])
+        // Show success toast
+        import('@/components/ui/use-toast').then(({ toast }) => {
+          toast({
+            title: "Added to favorites!",
+            description: `${place.name} has been saved to your favorites`,
+          })
+        })
+      } else {
+        setFavorites((prev) => prev.filter((id) => id !== place.id))
+        // Show success toast
+        import('@/components/ui/use-toast').then(({ toast }) => {
+          toast({
+            title: "Removed from favorites",
+            description: `${place.name} has been removed from your favorites`,
+          })
+        })
       }
     } catch (error) {
       console.error("Error toggling favorite:", error)
+      // Show generic error toast
+      import('@/components/ui/use-toast').then(({ toast }) => {
+        toast({
+          title: "Error",
+          description: "Something went wrong while saving your favorite. Please try again.",
+          variant: "destructive",
+        })
+      })
     }
   }
 
@@ -347,15 +425,7 @@ export default function Page() {
     setIsDateModalOpen(true)
   }
 
-  // Handle auth bypass if needed
-  const handleBypassAuth = () => {
-    // Store the bypass flag in both localStorage and sessionStorage
-    window.localStorage.setItem('bypass_auth_check', 'true');
-    window.sessionStorage.setItem('bypass_auth_check', 'true');
-    
-    // Force a page reload to apply the bypass
-    window.location.reload();
-  };
+  // Auth is now handled consistently via useAuth hook
 
   // Add loading state UI
   if (isLoadingUser) {
@@ -375,39 +445,7 @@ export default function Page() {
     )
   }
 
-  // Add auth check failed UI
-  if (authCheckFailed) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-[var(--gradient-start)] to-[var(--gradient-end)]">
-        <Header />
-        <main className="container mx-auto px-4 py-8">
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold mb-4">Authentication Check Failed</h2>
-              <p className="text-gray-600 mb-4">We're having trouble verifying your session.</p>
-              <Button onClick={() => router.push('/login?showForm=true&manualSignIn=true')} className="mb-4">
-                Sign In Again
-              </Button>
-              {showBypassOption && (
-                <div className="mt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      window.localStorage.setItem('bypass_auth_check', 'true')
-                      window.location.reload()
-                    }}
-                  >
-                    Continue Anyway
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    )
-  }
+  // Auth is handled by useAuth context - no need for manual error handling
 
   return (
     <>
@@ -422,6 +460,26 @@ export default function Page() {
                 DateThinker
               </h1>
               <p className="text-muted-foreground text-base md:text-lg">Discover the perfect date spots in your city</p>
+              {(user || !isLoadingUser) && (
+                <div className={`text-xs px-3 py-1 rounded-full inline-block ${
+                  userSubscriptionStatus === 'premium' || userSubscriptionStatus === 'lifetime'
+                    ? 'text-purple-700 bg-purple-100'
+                    : user 
+                      ? 'text-blue-700 bg-blue-100'
+                      : 'text-red-700 bg-red-100'
+                }`}>
+                  {user ? (
+                    <>👤 {user.email} | Status: {userSubscriptionStatus || 'Loading...'} {userSubscriptionStatus === 'premium' || userSubscriptionStatus === 'lifetime' ? '💎' : '⭐️'}</>
+                  ) : (
+                    <>❌ Not logged in - Click heart to sign in</>
+                  )}
+                </div>
+              )}
+              {isLoadingUser && (
+                <div className="text-xs text-blue-500 bg-blue-50 px-3 py-1 rounded-full inline-block">
+                  🔄 Loading authentication...
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleSearch} className="space-y-6 md:space-y-8">
@@ -556,6 +614,7 @@ export default function Page() {
                       onRefresh={() => handleRefresh("restaurant")}
                       isRefreshing={refreshing.restaurant}
                       isLoggedIn={!!user}
+                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
                     />
                   )}
 
@@ -573,6 +632,7 @@ export default function Page() {
                       onRefresh={() => handleRefresh("activity")}
                       isRefreshing={refreshing.activity}
                       isLoggedIn={!!user}
+                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
                     />
                   )}
                   {results.drink && (
@@ -584,6 +644,7 @@ export default function Page() {
                       onRefresh={() => handleRefresh("drink")}
                       isRefreshing={refreshing.drink}
                       isLoggedIn={!!user}
+                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
                     />
                   )}
                   {results.outdoor && (
@@ -595,6 +656,7 @@ export default function Page() {
                       onRefresh={() => handleRefresh("outdoor")}
                       isRefreshing={refreshing.outdoor}
                       isLoggedIn={!!user}
+                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
                     />
                   )}
                 </div>
@@ -626,6 +688,7 @@ function ResultCard({
   onRefresh,
   isRefreshing,
   isLoggedIn,
+  isPremium,
 }: {
   title: string
   result: PlaceResult
@@ -634,6 +697,7 @@ function ResultCard({
   onRefresh: () => void
   isRefreshing?: boolean
   isLoggedIn: boolean
+  isPremium?: boolean
 }) {
   // Determine the icon and color based on the category
   const getCategoryIcon = () => {
@@ -679,9 +743,21 @@ function ResultCard({
           <Button
             size="icon"
             variant="ghost"
-            onClick={onFavorite}
-            className={cn("h-8 w-8", isLoggedIn ? "text-rose-500" : "text-gray-400 hover:text-rose-500")}
-            title={isLoggedIn ? (isFavorite ? "Remove from favorites" : "Add to favorites") : "Login to save favorites"}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onFavorite()
+            }}
+            className={cn(
+              "h-8 w-8", 
+              !isLoggedIn ? "text-gray-400 hover:text-rose-500" :
+              "text-rose-500"
+            )}
+            title={
+              !isLoggedIn ? "Login to save favorites" :
+              isFavorite ? "Remove from favorites" : "Add to favorites"
+            }
           >
             <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
             <span className="sr-only">Favorite {title}</span>
@@ -689,7 +765,12 @@ function ResultCard({
           <Button
             size="icon"
             variant="ghost"
-            onClick={onRefresh}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onRefresh()
+            }}
             disabled={isRefreshing}
             className="h-8 w-8 transition-opacity"
           >

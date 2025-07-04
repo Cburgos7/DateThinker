@@ -11,7 +11,10 @@ import {
   Gift, 
   Settings, 
   LogOut,
-  User
+  User,
+  ChevronDown,
+  Bookmark,
+  Star
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -94,10 +97,32 @@ export function Header({ isLoggedIn, userName, avatarUrl }: HeaderProps = {}) {
               <Calendar className="h-4 w-4" />
               <span>Make a Date</span>
             </Link>
-            <Link href={displayUser ? "/my-dates" : "/login?redirectedFrom=/my-dates"} className="flex items-center space-x-1 text-sm font-medium hover:text-rose-500">
-              <Heart className="h-4 w-4" />
-              <span>My Dates</span>
-            </Link>
+            
+            {/* My Dates Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="flex items-center space-x-1 text-sm font-medium hover:text-rose-500 px-0"
+                >
+                  <Heart className="h-4 w-4" />
+                  <span>My Dates</span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => router.push(displayUser ? "/my-date-sets" : "/login?redirectedFrom=/my-date-sets")}>
+                  <Bookmark className="mr-2 h-4 w-4" />
+                  <span>My Date Sets</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push(displayUser ? "/my-favorite-dates" : "/login?redirectedFrom=/my-favorite-dates")}>
+                  <Star className="mr-2 h-4 w-4" />
+                  <span>My Favorite Dates</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
             <Link href="/about" className="flex items-center space-x-1 text-sm font-medium hover:text-rose-500">
               <Info className="h-4 w-4" />
               <span>About</span>

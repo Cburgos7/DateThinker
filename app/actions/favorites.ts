@@ -4,18 +4,42 @@ import { addToFavorites, removeFromFavorites, isInFavorites } from "@/lib/favori
 import type { PlaceResult } from "@/lib/search-utils"
 
 export async function toggleFavorite(place: PlaceResult): Promise<{ success: boolean; isFavorite: boolean }> {
-  const userWithSubscription = await getUserWithSubscription()
-
-  if (!userWithSubscription) {
-    return { success: false, isFavorite: false }
-  }
-
-  // Check if user has premium access
-  if (userWithSubscription.subscription_status !== "premium" && userWithSubscription.subscription_status !== "lifetime") {
-    return { success: false, isFavorite: false }
-  }
-
   try {
+    // First try to get user from client-side session
+    let userWithSubscription = await getUserWithSubscription()
+    
+    // If that fails, try the API fallback
+    if (!userWithSubscription) {
+      console.log("Client-side session failed, trying API fallback...")
+      try {
+        const response = await fetch("/api/auth/subscription-status")
+        const data = await response.json()
+        
+        if (data.authenticated && data.user_id) {
+          userWithSubscription = {
+            id: data.user_id,
+            email: data.user_email || "",
+            subscription_status: data.subscription_status || "free",
+            subscription_expiry: data.subscription_expiry,
+            full_name: null,
+            avatar_url: null,
+            stripe_customer_id: null,
+            created_at: ""
+          }
+        }
+      } catch (apiError) {
+        console.error("API fallback failed:", apiError)
+      }
+    }
+
+    if (!userWithSubscription) {
+      console.log("No user found via client session or API")
+      return { success: false, isFavorite: false }
+    }
+
+    // Allow all users (free, premium, lifetime) to save favorites
+    console.log("User found, proceeding with favorite toggle:", userWithSubscription.email)
+
     const isFavorite = await isInFavorites(userWithSubscription.id, place.id)
 
     if (isFavorite) {
@@ -32,14 +56,32 @@ export async function toggleFavorite(place: PlaceResult): Promise<{ success: boo
 }
 
 export async function checkIsFavorite(placeId: string): Promise<boolean> {
-  const user = await getCurrentUser()
-
-  if (!user) {
-    return false
-  }
-
   try {
-    return await isInFavorites(user.id, placeId)
+    // First try to get user from client-side session
+    let user = await getCurrentUser()
+    let userId: string | null = null
+    
+    if (user) {
+      userId = user.id
+    } else {
+      // If that fails, try the API fallback
+      try {
+        const response = await fetch("/api/auth/subscription-status")
+        const data = await response.json()
+        
+        if (data.authenticated && data.user_id) {
+          userId = data.user_id
+        }
+      } catch (apiError) {
+        console.error("API fallback failed:", apiError)
+      }
+    }
+
+    if (!userId) {
+      return false
+    }
+
+    return await isInFavorites(userId, placeId)
   } catch (error) {
     console.error("Error checking favorite status:", error)
     return false
