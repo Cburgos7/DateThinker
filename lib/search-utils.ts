@@ -13,6 +13,7 @@ export const searchParamsSchema = z.object({
     outdoors: z.boolean().default(false),
   }),
   priceRange: z.number().int().min(0).max(4).default(0),
+  excludeIds: z.array(z.string()).optional(),
 })
 
 // Define the result types
@@ -27,6 +28,8 @@ export type PlaceResult = {
   openNow?: boolean
   category: "restaurant" | "activity" | "drink" | "outdoor"
   placeId?: string
+  preferenceScore?: number // Added for recommendation scoring
+  isEmpty?: boolean // Added for empty slots that users can fill manually
 }
 
 export type SearchResults = {
@@ -95,12 +98,23 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
         console.log(`Found ${restaurants.length} restaurants in ${sanitizedCity}`)
 
         if (restaurants.length > 0) {
-          const randomIndex = Math.floor(Math.random() * Math.min(restaurants.length, 5))
-          const restaurant = restaurants[randomIndex]
-          console.log(
-            `Selected restaurant: ${restaurant.displayName?.text || restaurant.name}, ${restaurant.formattedAddress}`,
-          )
-          results.restaurant = convertGooglePlaceToResult(restaurant, "restaurant")
+          // Filter out excluded IDs
+          const filteredRestaurants = restaurants.filter(restaurant => {
+            const placeId = restaurant.id || restaurant.name || ''
+            return !validParams.excludeIds?.includes(placeId)
+          })
+          
+          if (filteredRestaurants.length > 0) {
+            const randomIndex = Math.floor(Math.random() * Math.min(filteredRestaurants.length, 5))
+            const restaurant = filteredRestaurants[randomIndex]
+            console.log(
+              `Selected restaurant: ${restaurant.displayName?.text || restaurant.name}, ${restaurant.formattedAddress}`,
+            )
+            results.restaurant = convertGooglePlaceToResult(restaurant, "restaurant")
+          } else {
+            console.warn(`No new restaurants found (all excluded) in ${sanitizedCity}, using fallback`)
+            results.restaurant = createFallbackPlace(sanitizedCity, "restaurant", validParams.priceRange)
+          }
         } else {
           console.warn(`No restaurants found in ${sanitizedCity}, using fallback`)
           results.restaurant = createFallbackPlace(sanitizedCity, "restaurant", validParams.priceRange)
@@ -127,12 +141,23 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
         console.log(`Found ${activities.length} activities in ${sanitizedCity}`)
 
         if (activities.length > 0) {
-          const randomIndex = Math.floor(Math.random() * Math.min(activities.length, 5))
-          const activity = activities[randomIndex]
-          console.log(
-            `Selected activity: ${activity.displayName?.text || activity.name}, ${activity.formattedAddress}`,
-          )
-          results.activity = convertGooglePlaceToResult(activity, "activity")
+          // Filter out excluded IDs
+          const filteredActivities = activities.filter(activity => {
+            const placeId = activity.id || activity.name || ''
+            return !validParams.excludeIds?.includes(placeId)
+          })
+          
+          if (filteredActivities.length > 0) {
+            const randomIndex = Math.floor(Math.random() * Math.min(filteredActivities.length, 5))
+            const activity = filteredActivities[randomIndex]
+            console.log(
+              `Selected activity: ${activity.displayName?.text || activity.name}, ${activity.formattedAddress}`,
+            )
+            results.activity = convertGooglePlaceToResult(activity, "activity")
+          } else {
+            console.warn(`No new activities found (all excluded) in ${sanitizedCity}, using fallback`)
+            results.activity = createFallbackPlace(sanitizedCity, "activity", validParams.priceRange)
+          }
         } else {
           console.warn(`No activities found in ${sanitizedCity}, using fallback`)
           results.activity = createFallbackPlace(sanitizedCity, "activity", validParams.priceRange)
@@ -159,12 +184,23 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
         console.log(`Found ${bars.length} bars in ${sanitizedCity}`)
 
         if (bars.length > 0) {
-          const randomIndex = Math.floor(Math.random() * Math.min(bars.length, 5))
-          const bar = bars[randomIndex]
-          console.log(
-            `Selected bar: ${bar.displayName?.text || bar.name}, ${bar.formattedAddress}`,
-          )
-          results.drink = convertGooglePlaceToResult(bar, "drink")
+          // Filter out excluded IDs
+          const filteredBars = bars.filter(bar => {
+            const placeId = bar.id || bar.name || ''
+            return !validParams.excludeIds?.includes(placeId)
+          })
+          
+          if (filteredBars.length > 0) {
+            const randomIndex = Math.floor(Math.random() * Math.min(filteredBars.length, 5))
+            const bar = filteredBars[randomIndex]
+            console.log(
+              `Selected bar: ${bar.displayName?.text || bar.name}, ${bar.formattedAddress}`,
+            )
+            results.drink = convertGooglePlaceToResult(bar, "drink")
+          } else {
+            console.warn(`No new bars found (all excluded) in ${sanitizedCity}, using fallback`)
+            results.drink = createFallbackPlace(sanitizedCity, "drink", validParams.priceRange)
+          }
         } else {
           console.warn(`No bars found in ${sanitizedCity}, using fallback`)
           results.drink = createFallbackPlace(sanitizedCity, "drink", validParams.priceRange)
@@ -191,12 +227,23 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
         console.log(`Found ${outdoorActivities.length} parks in ${sanitizedCity}`)
 
         if (outdoorActivities.length > 0) {
-          const randomIndex = Math.floor(Math.random() * Math.min(outdoorActivities.length, 5))
-          const outdoorActivity = outdoorActivities[randomIndex]
-          console.log(
-            `Selected outdoor activity: ${outdoorActivity.displayName?.text || outdoorActivity.name}, ${outdoorActivity.formattedAddress}`,
-          )
-          results.outdoor = convertGooglePlaceToResult(outdoorActivity, "outdoor")
+          // Filter out excluded IDs
+          const filteredOutdoorActivities = outdoorActivities.filter(outdoorActivity => {
+            const placeId = outdoorActivity.id || outdoorActivity.name || ''
+            return !validParams.excludeIds?.includes(placeId)
+          })
+          
+          if (filteredOutdoorActivities.length > 0) {
+            const randomIndex = Math.floor(Math.random() * Math.min(filteredOutdoorActivities.length, 5))
+            const outdoorActivity = filteredOutdoorActivities[randomIndex]
+            console.log(
+              `Selected outdoor activity: ${outdoorActivity.displayName?.text || outdoorActivity.name}, ${outdoorActivity.formattedAddress}`,
+            )
+            results.outdoor = convertGooglePlaceToResult(outdoorActivity, "outdoor")
+          } else {
+            console.warn(`No new outdoor activities found (all excluded) in ${sanitizedCity}, using fallback`)
+            results.outdoor = createFallbackPlace(sanitizedCity, "outdoor", validParams.priceRange)
+          }
         } else {
           console.warn(`No outdoor activities found in ${sanitizedCity}, using fallback`)
           results.outdoor = createFallbackPlace(sanitizedCity, "outdoor", validParams.priceRange)

@@ -9,7 +9,6 @@ import {
   Search,
   Heart,
   Sparkles,
-  DollarSign,
   TreePine,
   Utensils,
   Dumbbell,
@@ -17,6 +16,7 @@ import {
   MapPin,
   Star,
   Save,
+  Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,6 +35,9 @@ import { createClient } from "@/utils/supabase/client"
 import { type User } from "@supabase/supabase-js"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/contexts/auth-context"
+import { getPersonalizedRecommendations, getRandomRecommendation, type RecommendationResult } from "@/lib/recommendation-engine"
+import { getUserPreferences } from "@/app/actions/user-preferences"
+import { MultipleVenuesSection } from "@/components/multiple-venues-section"
 
 // Using consistent auth via useAuth hook
 
@@ -57,6 +60,19 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isDateModalOpen, setIsDateModalOpen] = useState(false)
+  const [multipleVenues, setMultipleVenues] = useState<{
+    restaurants: PlaceResult[]
+    activities: PlaceResult[]
+    drinks: PlaceResult[]
+    outdoors: PlaceResult[]
+  }>({
+    restaurants: [],
+    activities: [],
+    drinks: [],
+    outdoors: []
+  })
+  const [userPreferences, setUserPreferences] = useState<any>(null)
+  const [isExploring, setIsExploring] = useState(false)
 
   const [refreshing, setRefreshing] = useState<{
     restaurant?: boolean
@@ -109,6 +125,22 @@ export default function Page() {
     }
 
     fetchSubscriptionStatus()
+  }, [user])
+
+  // Load user preferences when user changes
+  useEffect(() => {
+    async function loadUserPreferences() {
+      if (user?.id) {
+        try {
+          const preferences = await getUserPreferences(user.id)
+          setUserPreferences(preferences)
+        } catch (error) {
+          console.error("Error loading user preferences:", error)
+        }
+      }
+    }
+
+    loadUserPreferences()
   }, [user])
 
   // Time-based theming
@@ -178,7 +210,7 @@ export default function Page() {
     if (error) setError(null)
   }
 
-  const handleSearch = async (e?: React.FormEvent, searchFilters = filters, searchPriceRange = priceRange) => {
+  const handleSearch = async (e?: React.FormEvent, searchFilters = filters) => {
     if (e) {
       e.preventDefault()
     }
@@ -204,7 +236,6 @@ export default function Page() {
         body: JSON.stringify({
           city,
           filters: searchFilters,
-          priceRange: searchPriceRange,
         }),
       })
 
@@ -219,7 +250,6 @@ export default function Page() {
           body: JSON.stringify({
             city,
             filters: searchFilters,
-            priceRange: searchPriceRange,
           }),
         })
       }
@@ -236,7 +266,35 @@ export default function Page() {
         throw new Error("No results found")
       }
 
-      setResults(data)
+      // Count how many filters are selected
+      const selectedFilters = Object.values(searchFilters).filter(Boolean).length
+      const isMultipleMode = selectedFilters > 1
+
+      if (isMultipleMode) {
+        // Start directly in multiple venue mode
+        console.log("🔄 Starting in multiple venue mode (multiple filters selected)")
+        
+        // Clear single results and populate multiple venues
+        setResults({})
+        setMultipleVenues({
+          restaurants: data.restaurant ? [data.restaurant] : [],
+          activities: data.activity ? [data.activity] : [],
+          drinks: data.drink ? [data.drink] : [],
+          outdoors: data.outdoor ? [data.outdoor] : []
+        })
+      } else {
+        // Single filter mode - show single results as before
+        console.log("🔄 Starting in single venue mode (one filter selected)")
+        setResults(data)
+        // Clear multiple venues to avoid confusion
+        setMultipleVenues({
+          restaurants: [],
+          activities: [],
+          drinks: [],
+          outdoors: []
+        })
+      }
+      
       setError(null)
 
       // Trigger confetti if we have results
@@ -274,7 +332,6 @@ export default function Page() {
             type: results[type]!.category,
             city,
             placeId: results[type]!.placeId,
-            priceRange,
           }),
         })
 
@@ -290,7 +347,6 @@ export default function Page() {
               type: results[type]!.category,
               city,
               placeId: results[type]!.placeId,
-              priceRange,
             }),
           })
         }
@@ -334,14 +390,132 @@ export default function Page() {
       randomFilters.restaurants = true
     }
 
-    // Set random price range (1-3)
-    const randomPrice = Math.floor(Math.random() * 3) + 1
+    console.log("Surprise Me filters:", randomFilters)
 
-    console.log("Surprise Me filters:", randomFilters, "price:", randomPrice)
-
+    // Update the UI filters to show what we're searching for
+    setFilters(randomFilters)
+    
     // Directly pass the random filters to the search function
     // instead of updating state and then searching
-    handleSearch(undefined, randomFilters, randomPrice)
+    handleSearch(undefined, randomFilters)
+  }
+
+  const handleExploreRecommendations = async () => {
+    if (!user?.id || !city.trim()) {
+      setError(!user?.id ? "Please sign in to get personalized recommendations" : "Please enter a city")
+      return
+    }
+
+    setIsExploring(true)
+    setError(null)
+
+    try {
+      const recommendations = await getPersonalizedRecommendations({
+        city: city.trim(),
+        placeId,
+        userId: user.id,
+        maxResults: 3
+      })
+
+      // Count how many categories have results
+      const categoriesWithResults = [
+        recommendations.restaurants.length > 0,
+        recommendations.activities.length > 0,
+        recommendations.drinks.length > 0,
+        recommendations.outdoors.length > 0
+      ].filter(Boolean).length
+
+      const isMultipleMode = categoriesWithResults > 1
+
+      if (isMultipleMode) {
+        // Start directly in multiple venue mode
+        console.log("🔄 Explore recommendations starting in multiple venue mode")
+        setResults({})
+        setMultipleVenues(recommendations)
+      } else {
+        // Single category mode - show single results
+        console.log("🔄 Explore recommendations starting in single venue mode")
+        const newResults: SearchResults = {}
+        
+        if (recommendations.restaurants.length > 0) {
+          newResults.restaurant = recommendations.restaurants[0]
+        }
+        if (recommendations.activities.length > 0) {
+          newResults.activity = recommendations.activities[0]
+        }
+        if (recommendations.drinks.length > 0) {
+          newResults.drink = recommendations.drinks[0]
+        }
+        if (recommendations.outdoors.length > 0) {
+          newResults.outdoor = recommendations.outdoors[0]
+        }
+
+        setResults(newResults)
+        setMultipleVenues({
+          restaurants: [],
+          activities: [],
+          drinks: [],
+          outdoors: []
+        })
+      }
+
+      // Update filters based on what was found
+      setFilters({
+        restaurants: recommendations.restaurants.length > 0,
+        activities: recommendations.activities.length > 0,
+        drinks: recommendations.drinks.length > 0,
+        outdoors: recommendations.outdoors.length > 0,
+      })
+
+    } catch (error) {
+      console.error("Error getting recommendations:", error)
+      setError("Failed to get recommendations. Please try again.")
+    } finally {
+      setIsExploring(false)
+    }
+  }
+
+  const handleRandomizeCategory = async (category: 'restaurant' | 'activity' | 'drink' | 'outdoor') => {
+    if (!user?.id || !city.trim()) {
+      setError(!user?.id ? "Please sign in to get random suggestions" : "Please enter a city")
+      return
+    }
+
+    setRefreshing(prev => ({ ...prev, [category]: true }))
+
+    try {
+      const currentIds = Object.values(results)
+        .filter(Boolean)
+        .map(place => place!.id)
+
+      const randomPlace = await getRandomRecommendation({
+        city: city.trim(),
+        placeId,
+        userId: user.id,
+        category,
+        excludeIds: currentIds
+      })
+
+      if (randomPlace) {
+        setResults(prev => ({
+          ...prev,
+          [category]: randomPlace
+        }))
+
+        // Update the filters to show this category
+        setFilters(prev => ({
+          ...prev,
+          [`${category}s`]: true
+        }))
+      } else {
+        setError(`No ${category} suggestions found. Try a different city or search criteria.`)
+      }
+    } catch (error) {
+      console.error(`Error getting random ${category}:`, error)
+      setError(`Failed to get random ${category}. Please try again.`)
+    } finally {
+      setRefreshing(prev => ({ ...prev, [category]: false }))
+    }
   }
 
   const handleToggleFavorite = async (place: PlaceResult) => {
@@ -408,16 +582,229 @@ export default function Page() {
     }
   }
 
+  const handleAddMoreVenues = (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors') => {
+    // Create an empty slot that users can fill manually or with surprise me
+    const emptySlot = {
+      id: `empty-${Date.now()}`,
+      name: '',
+      address: '',
+      rating: 0,
+      price: 0,
+      category: category.slice(0, -1) as 'restaurant' | 'activity' | 'drink' | 'outdoor',
+      photoUrl: '',
+      openNow: undefined,
+      isEmpty: true
+    }
+    
+    setMultipleVenues(prev => ({
+      ...prev,
+      [category]: [...prev[category], emptySlot]
+    }))
+  }
+
+  const handleRemoveVenue = (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors', venueId: string) => {
+    setMultipleVenues(prev => ({
+      ...prev,
+      [category]: prev[category].filter(venue => venue.id !== venueId)
+    }))
+  }
+
+  const handleRandomizeMultipleCategory = async (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors') => {
+    if (!userPreferences || !city) return
+
+    setIsLoading(true)
+    try {
+      const categoryMap = {
+        restaurants: 'restaurant',
+        activities: 'activity', 
+        drinks: 'drink',
+        outdoors: 'outdoor'
+      } as const
+
+      const recommendation = await getRandomRecommendation({
+        city,
+        placeId,
+        userId: user?.id || '',
+        category: categoryMap[category],
+        excludeIds: multipleVenues[category].map(v => v.id)
+      })
+
+      if (recommendation) {
+        setMultipleVenues(prev => ({
+          ...prev,
+          [category]: [...prev[category], recommendation]
+        }))
+      }
+    } catch (error) {
+      console.error('Error randomizing category:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleFillEmptySlot = async (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors', venueId: string, venueName: string) => {
+    if (!city || !venueName.trim()) return
+
+    setIsLoading(true)
+    try {
+      // Search for the specific venue
+      const categoryFilter = {
+        restaurants: category === 'restaurants',
+        activities: category === 'activities',
+        drinks: category === 'drinks',
+        outdoors: category === 'outdoors',
+      }
+
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          city: `${venueName} in ${city}`,
+          placeId,
+          filters: categoryFilter,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const newVenue = data[category === 'restaurants' ? 'restaurant' : 
+                          category === 'activities' ? 'activity' : 
+                          category === 'drinks' ? 'drink' : 'outdoor']
+
+      if (newVenue) {
+        setMultipleVenues(prev => ({
+          ...prev,
+          [category]: prev[category].map(venue => 
+            venue.id === venueId ? newVenue : venue
+          )
+        }))
+      } else {
+        // If no venue found, create a placeholder
+        const placeholderVenue = {
+          id: venueId,
+          name: venueName,
+          address: `${city}`,
+          rating: 0,
+          price: 0,
+          category: category.slice(0, -1) as 'restaurant' | 'activity' | 'drink' | 'outdoor',
+          photoUrl: '',
+          openNow: undefined,
+        }
+        setMultipleVenues(prev => ({
+          ...prev,
+          [category]: prev[category].map(venue => 
+            venue.id === venueId ? placeholderVenue : venue
+          )
+        }))
+      }
+    } catch (error) {
+      console.error('Error filling empty slot:', error)
+      setError('Failed to find the specified venue. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRandomizeEmptySlot = async (category: 'restaurants' | 'activities' | 'drinks' | 'outdoors', venueId: string) => {
+    if (!city) return
+
+    setIsLoading(true)
+    try {
+      const categoryFilter = {
+        restaurants: category === 'restaurants',
+        activities: category === 'activities',
+        drinks: category === 'drinks',
+        outdoors: category === 'outdoors',
+      }
+
+      // Get existing venue IDs to exclude
+      const existingIds = multipleVenues[category].map(v => v.id).filter(id => id !== venueId)
+
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          city,
+          placeId,
+          filters: categoryFilter,
+          excludeIds: existingIds,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const newVenue = data[category === 'restaurants' ? 'restaurant' : 
+                          category === 'activities' ? 'activity' : 
+                          category === 'drinks' ? 'drink' : 'outdoor']
+
+      if (newVenue) {
+        setMultipleVenues(prev => ({
+          ...prev,
+          [category]: prev[category].map(venue => 
+            venue.id === venueId ? newVenue : venue
+          )
+        }))
+      }
+    } catch (error) {
+      console.error('Error randomizing empty slot:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleMoveVenuesToMultiple = () => {
+    // Move any single results to multiple venues arrays
+    const newMultipleVenues = { ...multipleVenues }
+    
+    if (results.restaurant && !newMultipleVenues.restaurants.find(v => v.id === results.restaurant!.id)) {
+      newMultipleVenues.restaurants = [...newMultipleVenues.restaurants, results.restaurant]
+    }
+    if (results.activity && !newMultipleVenues.activities.find(v => v.id === results.activity!.id)) {
+      newMultipleVenues.activities = [...newMultipleVenues.activities, results.activity]
+    }
+    if (results.drink && !newMultipleVenues.drinks.find(v => v.id === results.drink!.id)) {
+      newMultipleVenues.drinks = [...newMultipleVenues.drinks, results.drink]
+    }
+    if (results.outdoor && !newMultipleVenues.outdoors.find(v => v.id === results.outdoor!.id)) {
+      newMultipleVenues.outdoors = [...newMultipleVenues.outdoors, results.outdoor]
+    }
+
+    setMultipleVenues(newMultipleVenues)
+    
+    // Clear single results since they're now in multiple venues
+    setResults({})
+  }
+
   // Get all places from results as an array
   const getPlacesArray = (): PlaceResult[] => {
     const places: PlaceResult[] = []
 
+    // Include current single results
     if (results.restaurant) places.push(results.restaurant)
     if (results.activity) places.push(results.activity)
     if (results.drink) places.push(results.drink)
     if (results.outdoor) places.push(results.outdoor)
 
-    return places
+    // Include multiple venues if any, but filter out empty slots
+    places.push(...multipleVenues.restaurants.filter(venue => !venue.isEmpty))
+    places.push(...multipleVenues.activities.filter(venue => !venue.isEmpty))
+    places.push(...multipleVenues.drinks.filter(venue => !venue.isEmpty))
+    places.push(...multipleVenues.outdoors.filter(venue => !venue.isEmpty))
+
+    // Remove duplicates based on place ID
+    return places.filter((place, index, array) => 
+      array.findIndex(p => p.id === place.id) === index
+    )
   }
 
   const handleSaveDatePlan = () => {
@@ -530,63 +917,76 @@ export default function Page() {
                 </Toggle>
               </div>
 
-              <div className="flex flex-wrap gap-3 md:gap-4 justify-center">
-                <Toggle
-                  pressed={priceRange === 1}
-                  onPressedChange={() => setPriceRange((prev) => (prev === 1 ? 0 : 1))}
-                  className="data-[state=on]:bg-green-200 data-[state=on]:text-green-800"
-                >
-                  <DollarSign className="h-4 w-4 mr-1" />
-                  Budget
-                </Toggle>
-                <Toggle
-                  pressed={priceRange === 2}
-                  onPressedChange={() => setPriceRange((prev) => (prev === 2 ? 0 : 2))}
-                  className="data-[state=on]:bg-green-200 data-[state=on]:text-green-800"
-                >
-                  <DollarSign className="h-4 w-4 mr-1" />
-                  <DollarSign className="h-4 w-4" />
-                  Moderate
-                </Toggle>
-                <Toggle
-                  pressed={priceRange === 3}
-                  onPressedChange={() => setPriceRange((prev) => (prev === 3 ? 0 : 3))}
-                  className="data-[state=on]:bg-green-200 data-[state=on]:text-green-800"
-                >
-                  <DollarSign className="h-4 w-4 mr-1" />
-                  <DollarSign className="h-4 w-4 mr-1" />
-                  <DollarSign className="h-4 w-4" />
-                  Luxury
-                </Toggle>
-              </div>
 
-              <div className="flex gap-4">
-                <Button
-                  type="submit"
-                  className="flex-1 h-12 text-lg bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
-                  disabled={isLoading}
-                >
-                  {isLoading ? <div className="animate-pulse">Finding perfect spots...</div> : "Find Date Ideas"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleSurpriseMe}
-                  className="group"
-                  disabled={isLoading}
-                >
-                  <Sparkles className="h-5 w-5 mr-2 group-hover:animate-spin" />
-                  Surprise Me
-                </Button>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-4">
+                  <Button
+                    type="submit"
+                    className="flex-1 h-12 text-lg bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
+                    disabled={isLoading || isExploring}
+                  >
+                    {isLoading ? <div className="animate-pulse">Finding perfect spots...</div> : "Find Date Ideas"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSurpriseMe}
+                    className="group"
+                    disabled={isLoading || isExploring}
+                  >
+                    <Sparkles className="h-5 w-5 mr-2 group-hover:animate-spin" />
+                    Surprise Me
+                  </Button>
+                </div>
+                
+                {user && userPreferences && (
+                  <Button
+                    type="button"
+                    onClick={handleExploreRecommendations}
+                    className="h-12 text-lg bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
+                    disabled={isLoading || isExploring}
+                  >
+                    {isExploring ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Getting personalized recommendations...
+                      </div>
+                    ) : (
+                      <>
+                        <Heart className="h-5 w-5 mr-2" />
+                        🔍 Explore Based on Your Preferences
+                      </>
+                    )}
+                  </Button>
+                )}
+                
+                {user && !userPreferences && (
+                  <div className="text-center text-sm text-muted-foreground p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                    💡 Set up your preferences in <a href="/settings" className="text-blue-600 hover:underline">Settings</a> to get personalized recommendations!
+                  </div>
+                )}
               </div>
 
               {error && <div className="text-center text-red-500 animate-appear">{error}</div>}
             </form>
 
-            {/* Ad Banner */}
-            <div className="text-center my-6">
-              <AdBanner adSlot="make-date-top" adFormat="leaderboard" />
-            </div>
+
+
+            {/* Multiple Venue Mode Indicator */}
+            {(multipleVenues.restaurants.length > 0 || 
+              multipleVenues.activities.length > 0 || 
+              multipleVenues.drinks.length > 0 || 
+              multipleVenues.outdoors.length > 0) && (
+              <div className="text-center my-4">
+                <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-100 to-blue-100 rounded-full">
+                  <Sparkles className="h-4 w-4 mr-2 text-purple-600" />
+                  <span className="text-sm font-medium text-purple-700">
+                    Multiple Venues Mode - Building your perfect date plan
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Stand-alone Save Date Plan button */}
             <div className="flex justify-center">
@@ -599,8 +999,7 @@ export default function Page() {
               </Button>
             </div>
 
-            {/* Middle ad banner - shown when no results yet */}
-            {Object.keys(results).length === 0 && <AdBanner adSlot="7890123456" adFormat="rectangle" />}
+
 
             {Object.keys(results).length > 0 && (
               <>
@@ -612,16 +1011,14 @@ export default function Page() {
                       onFavorite={() => handleToggleFavorite(results.restaurant!)}
                       isFavorite={favorites.includes(results.restaurant.id)}
                       onRefresh={() => handleRefresh("restaurant")}
+                      onRandomize={() => handleRandomizeCategory("restaurant")}
                       isRefreshing={refreshing.restaurant}
                       isLoggedIn={!!user}
                       isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
                     />
                   )}
 
-                  {/* Ad between results */}
-                  {results.restaurant && (results.activity || results.drink || results.outdoor) && (
-                    <AdBanner adSlot="2345678901" adFormat="rectangle" className="my-2" />
-                  )}
+
 
                   {results.activity && (
                     <ResultCard
@@ -630,6 +1027,7 @@ export default function Page() {
                       onFavorite={() => handleToggleFavorite(results.activity!)}
                       isFavorite={favorites.includes(results.activity.id)}
                       onRefresh={() => handleRefresh("activity")}
+                      onRandomize={() => handleRandomizeCategory("activity")}
                       isRefreshing={refreshing.activity}
                       isLoggedIn={!!user}
                       isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
@@ -642,6 +1040,7 @@ export default function Page() {
                       onFavorite={() => handleToggleFavorite(results.drink!)}
                       isFavorite={favorites.includes(results.drink.id)}
                       onRefresh={() => handleRefresh("drink")}
+                      onRandomize={() => handleRandomizeCategory("drink")}
                       isRefreshing={refreshing.drink}
                       isLoggedIn={!!user}
                       isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
@@ -654,6 +1053,7 @@ export default function Page() {
                       onFavorite={() => handleToggleFavorite(results.outdoor!)}
                       isFavorite={favorites.includes(results.outdoor.id)}
                       onRefresh={() => handleRefresh("outdoor")}
+                      onRandomize={() => handleRandomizeCategory("outdoor")}
                       isRefreshing={refreshing.outdoor}
                       isLoggedIn={!!user}
                       isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
@@ -661,13 +1061,114 @@ export default function Page() {
                   )}
                 </div>
 
-                {/* Bottom ad banner - after results */}
-                <div className="text-center my-6">
-                  <AdBanner adSlot="5678901234" adFormat="leaderboard" />
-                </div>
+                {/* Add transition to multiple venues - only show if not already in multiple mode */}
+                {(results.restaurant || results.activity || results.drink || results.outdoor) && 
+                 (multipleVenues.restaurants.length === 0 && 
+                  multipleVenues.activities.length === 0 && 
+                  multipleVenues.drinks.length === 0 && 
+                  multipleVenues.outdoors.length === 0) && (
+                  <div className="text-center my-6">
+                    <Button
+                      onClick={handleMoveVenuesToMultiple}
+                      className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:opacity-90"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Convert to Multiple Venues Mode
+                    </Button>
+                  </div>
+                )}
+
+
               </>
             )}
+
+            {/* Multiple Venues Sections */}
+            {(multipleVenues.restaurants.length > 0 || 
+              multipleVenues.activities.length > 0 || 
+              multipleVenues.drinks.length > 0 || 
+              multipleVenues.outdoors.length > 0) && (
+              <div className="space-y-6">
+
+                {multipleVenues.restaurants.length > 0 && (
+                  <MultipleVenuesSection
+                    title="Restaurants"
+                    category="restaurants"
+                    venues={multipleVenues.restaurants}
+                    onAddMore={() => handleAddMoreVenues('restaurants')}
+                    onRemove={(venueId) => handleRemoveVenue('restaurants', venueId)}
+                    onRandomize={() => handleRandomizeMultipleCategory('restaurants')}
+                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('restaurants', venueId, venueName)}
+                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('restaurants', venueId)}
+                    isLoading={isLoading}
+                    isLoggedIn={!!user}
+                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
+                    categoryIcon={<Utensils className="h-4 w-4 text-rose-500" />}
+                    categoryColor="bg-rose-500 hover:bg-rose-600"
+                  />
+                )}
+
+                {multipleVenues.activities.length > 0 && (
+                  <MultipleVenuesSection
+                    title="Activities"
+                    category="activities"
+                    venues={multipleVenues.activities}
+                    onAddMore={() => handleAddMoreVenues('activities')}
+                    onRemove={(venueId) => handleRemoveVenue('activities', venueId)}
+                    onRandomize={() => handleRandomizeMultipleCategory('activities')}
+                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('activities', venueId, venueName)}
+                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('activities', venueId)}
+                    isLoading={isLoading}
+                    isLoggedIn={!!user}
+                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
+                    categoryIcon={<Dumbbell className="h-4 w-4 text-purple-500" />}
+                    categoryColor="bg-purple-500 hover:bg-purple-600"
+                  />
+                )}
+
+                {multipleVenues.drinks.length > 0 && (
+                  <MultipleVenuesSection
+                    title="Drinks & Bars"
+                    category="drinks"
+                    venues={multipleVenues.drinks}
+                    onAddMore={() => handleAddMoreVenues('drinks')}
+                    onRemove={(venueId) => handleRemoveVenue('drinks', venueId)}
+                    onRandomize={() => handleRandomizeMultipleCategory('drinks')}
+                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('drinks', venueId, venueName)}
+                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('drinks', venueId)}
+                    isLoading={isLoading}
+                    isLoggedIn={!!user}
+                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
+                    categoryIcon={<Wine className="h-4 w-4 text-blue-500" />}
+                    categoryColor="bg-blue-500 hover:bg-blue-600"
+                  />
+                )}
+
+                {multipleVenues.outdoors.length > 0 && (
+                  <MultipleVenuesSection
+                    title="Outdoor Activities"
+                    category="outdoors"
+                    venues={multipleVenues.outdoors}
+                    onAddMore={() => handleAddMoreVenues('outdoors')}
+                    onRemove={(venueId) => handleRemoveVenue('outdoors', venueId)}
+                    onRandomize={() => handleRandomizeMultipleCategory('outdoors')}
+                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('outdoors', venueId, venueName)}
+                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('outdoors', venueId)}
+                    isLoading={isLoading}
+                    isLoggedIn={!!user}
+                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
+                    categoryIcon={<TreePine className="h-4 w-4 text-emerald-500" />}
+                    categoryColor="bg-emerald-500 hover:bg-emerald-600"
+                  />
+                )}
+
+              </div>
+            )}
           </div>
+        </div>
+        
+        {/* Ad banner at the bottom of the page */}
+        <div className="text-center my-6">
+          <AdBanner adSlot="6789012345" adFormat="leaderboard" />
         </div>
       </main>
       <Footer />
@@ -686,6 +1187,7 @@ function ResultCard({
   onFavorite,
   isFavorite,
   onRefresh,
+  onRandomize,
   isRefreshing,
   isLoggedIn,
   isPremium,
@@ -695,6 +1197,7 @@ function ResultCard({
   onFavorite: () => void
   isFavorite: boolean
   onRefresh: () => void
+  onRandomize?: () => void
   isRefreshing?: boolean
   isLoggedIn: boolean
   isPremium?: boolean
@@ -762,6 +1265,24 @@ function ResultCard({
             <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
             <span className="sr-only">Favorite {title}</span>
           </Button>
+          {onRandomize && (
+            <Button
+              size="icon"
+              variant="ghost"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onRandomize()
+              }}
+              disabled={isRefreshing}
+              className="h-8 w-8 transition-opacity"
+              title={`Surprise me with a different ${title.toLowerCase()}`}
+            >
+              <Sparkles className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+              <span className="sr-only">Randomize {title}</span>
+            </Button>
+          )}
           <Button
             size="icon"
             variant="ghost"

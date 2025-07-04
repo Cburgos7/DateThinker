@@ -115,26 +115,53 @@ export interface Database {
         Row: {
           id: string
           created_at: string
+          updated_at: string
           user_id: string
           default_city: string | null
           default_filters: Json | null
           default_price_range: number | null
+          interests: Json | null
+          activity_preferences: Json | null
+          dining_preferences: Json | null
+          location_preferences: Json | null
+          age_range: string | null
+          relationship_status: string | null
+          date_frequency: string | null
+          budget_range: string | null
         }
         Insert: {
           id?: string
           created_at?: string
+          updated_at?: string
           user_id: string
           default_city?: string | null
           default_filters?: Json | null
           default_price_range?: number | null
+          interests?: Json | null
+          activity_preferences?: Json | null
+          dining_preferences?: Json | null
+          location_preferences?: Json | null
+          age_range?: string | null
+          relationship_status?: string | null
+          date_frequency?: string | null
+          budget_range?: string | null
         }
         Update: {
           id?: string
           created_at?: string
+          updated_at?: string
           user_id?: string
           default_city?: string | null
           default_filters?: Json | null
           default_price_range?: number | null
+          interests?: Json | null
+          activity_preferences?: Json | null
+          dining_preferences?: Json | null
+          location_preferences?: Json | null
+          age_range?: string | null
+          relationship_status?: string | null
+          date_frequency?: string | null
+          budget_range?: string | null
         }
       }
       

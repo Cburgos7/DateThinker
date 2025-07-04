@@ -58,7 +58,8 @@ export async function POST(request: Request) {
     const results = await searchPlaces({
       city: body.city,
       filters: body.filters,
-      priceRange: body.priceRange
+      priceRange: body.priceRange,
+      excludeIds: body.excludeIds
     })
     console.log("[Search API] Search results:", results)
 
