@@ -10,6 +10,8 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { getCurrentUser } from "@/lib/supabase"
 import { useAuth } from "@/contexts/auth-context"
+import { PreferencesOverview } from "@/components/preferences-overview"
+import { OnboardingModal } from "@/components/onboarding-modal"
 
 // Date image slideshow data
 const dateImages = [
@@ -45,6 +47,7 @@ export function HomeClient() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [user, setUser] = useState<any>(null)
   const [isLoadingUser, setIsLoadingUser] = useState(true)
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false)
   const { user: authUser } = useAuth()
   
   const currentUser = authUser || user
@@ -181,6 +184,18 @@ export function HomeClient() {
         </div>
       </main>
       
+      {/* Preferences Overview for logged-in users */}
+      {currentUser && (
+        <section className="bg-white/50 py-12 px-4">
+          <div className="max-w-6xl mx-auto">
+            <PreferencesOverview 
+              userId={currentUser.id}
+              onSetupPreferences={() => setShowOnboardingModal(true)}
+            />
+          </div>
+        </section>
+      )}
+      
       {/* How it works section */}
       <section className="bg-white py-16 px-4">
         <div className="max-w-6xl mx-auto">
@@ -284,6 +299,20 @@ export function HomeClient() {
       </section>
       
       <Footer />
+      
+      {/* Onboarding Modal */}
+      {currentUser && (
+        <OnboardingModal
+          isOpen={showOnboardingModal}
+          onClose={() => setShowOnboardingModal(false)}
+          userId={currentUser.id}
+          onComplete={() => {
+            setShowOnboardingModal(false)
+            // Refresh the page to show updated preferences
+            window.location.reload()
+          }}
+        />
+      )}
     </div>
   )
 } 
