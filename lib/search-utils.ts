@@ -9,8 +9,8 @@ export const searchParamsSchema = z.object({
   filters: z.object({
     restaurants: z.boolean().default(true),
     activities: z.boolean().default(false),
-    drinks: z.boolean().default(false),
     outdoors: z.boolean().default(false),
+    events: z.boolean().default(false),
   }),
   priceRange: z.number().int().min(0).max(4).default(0),
   excludeIds: z.array(z.string()).optional(),
@@ -20,13 +20,13 @@ export const searchParamsSchema = z.object({
 export type PlaceResult = {
   id: string
   name: string
-  rating: number
+  rating?: number // Made optional to support manual venues without ratings
   address: string
   price: number
   isOutdoor?: boolean
   photoUrl?: string
   openNow?: boolean
-  category: "restaurant" | "activity" | "drink" | "outdoor"
+  category: "restaurant" | "activity" | "outdoor" | "event"
   placeId?: string
   preferenceScore?: number // Added for recommendation scoring
   isEmpty?: boolean // Added for empty slots that users can fill manually
@@ -35,8 +35,8 @@ export type PlaceResult = {
 export type SearchResults = {
   restaurant?: PlaceResult
   activity?: PlaceResult
-  drink?: PlaceResult
   outdoor?: PlaceResult
+  event?: PlaceResult
 }
 
 // Function to search for places
@@ -70,8 +70,8 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
     const results: SearchResults = {
       restaurant: undefined,
       activity: undefined,
-      drink: undefined,
-      outdoor: undefined
+      outdoor: undefined,
+      event: undefined
     }
 
     // Get the price range for Google Places API (0-4)
@@ -168,48 +168,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
       }
     }
 
-    // Search for drinks if the filter is enabled
-    if (validParams.filters.drinks) {
-      try {
-        // Use the updated Places API v1 format
-        const bars = await searchGooglePlaces(
-          `bars in ${sanitizedCity}`,
-          "bar",
-          undefined,
-          5000,
-          priceLevel,
-          priceLevel,
-        )
 
-        console.log(`Found ${bars.length} bars in ${sanitizedCity}`)
-
-        if (bars.length > 0) {
-          // Filter out excluded IDs
-          const filteredBars = bars.filter(bar => {
-            const placeId = bar.id || bar.name || ''
-            return !validParams.excludeIds?.includes(placeId)
-          })
-          
-          if (filteredBars.length > 0) {
-            const randomIndex = Math.floor(Math.random() * Math.min(filteredBars.length, 5))
-            const bar = filteredBars[randomIndex]
-            console.log(
-              `Selected bar: ${bar.displayName?.text || bar.name}, ${bar.formattedAddress}`,
-            )
-            results.drink = convertGooglePlaceToResult(bar, "drink")
-          } else {
-            console.warn(`No new bars found (all excluded) in ${sanitizedCity}, using fallback`)
-            results.drink = createFallbackPlace(sanitizedCity, "drink", validParams.priceRange)
-          }
-        } else {
-          console.warn(`No bars found in ${sanitizedCity}, using fallback`)
-          results.drink = createFallbackPlace(sanitizedCity, "drink", validParams.priceRange)
-        }
-      } catch (error) {
-        console.error("Error fetching bars:", error)
-        results.drink = createFallbackPlace(sanitizedCity, "drink", validParams.priceRange)
-      }
-    }
 
     // Search for outdoor activities if the filter is enabled
     if (validParams.filters.outdoors) {
@@ -275,7 +234,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
 // Helper function to convert Google Place to our result format
 function convertGooglePlaceToResult(
   place: GooglePlace,
-  category: "restaurant" | "activity" | "drink" | "outdoor",
+  category: "restaurant" | "activity" | "outdoor" | "event",
 ): PlaceResult {
   return {
     id: place.id || `fallback-${category}-${Date.now()}`,
@@ -297,16 +256,16 @@ function getRandomImage(images: string[]): string {
 }
 
 // Helper function to get a random image for a category
-function getRandomImageForCategory(category: "restaurant" | "activity" | "drink" | "outdoor"): string {
+function getRandomImageForCategory(category: "restaurant" | "activity" | "outdoor" | "event"): string {
   switch (category) {
     case "restaurant":
       return getRandomImage(restaurantImages)
     case "activity":
       return getRandomImage(activityImages)
-    case "drink":
-      return getRandomImage(drinkImages)
     case "outdoor":
       return getRandomImage(outdoorImages)
+    case "event":
+      return getRandomImage(eventImages)
     default:
       return getRandomImage(restaurantImages)
   }
@@ -315,7 +274,7 @@ function getRandomImageForCategory(category: "restaurant" | "activity" | "drink"
 // Helper function to create a fallback place
 function createFallbackPlace(
   city: string,
-  type: "restaurant" | "activity" | "drink" | "outdoor",
+  type: "restaurant" | "activity" | "outdoor" | "event",
   priceRange = 0,
 ): PlaceResult {
   const price = priceRange || Math.floor(Math.random() * 3) + 1
@@ -333,12 +292,12 @@ function createFallbackPlace(
       name = `${getRandomActivityName()} in ${city}`
       address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
       break
-    case "drink":
-      name = `${getRandomBarName()} in ${city}`
-      address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
-      break
     case "outdoor":
       name = `${getRandomParkName()} in ${city}`
+      address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
+      break
+    case "event":
+      name = `${getRandomEventName()} in ${city}`
       address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
       break
     default:
@@ -376,12 +335,12 @@ const activityImages = [
   "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?q=80&w=600&auto=format&fit=crop",
 ]
 
-const drinkImages = [
-  "https://images.unsplash.com/photo-1514933651103-005eec06c04b?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1470337458703-46ad1756a187?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1543007630-9710e4a00a20?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1572116469696-31de0f17cc34?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1566417713940-fe7c737a9ef2?q=80&w=600&auto=format&fit=crop",
+const eventImages = [
+  "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=600&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop",
 ]
 
 const outdoorImages = [
@@ -417,10 +376,10 @@ function getRandomActivityName(): string {
   return `${prefix} ${type} ${suffix}`.trim()
 }
 
-function getRandomBarName(): string {
+function getRandomEventName(): string {
   const prefixes = ["The", "A", ""]
-  const types = ["Cocktail", "Wine", "Beer", "Lounge", "Pub", "Tavern", "Bar", "Speakeasy"]
-  const suffixes = ["Bar", "Lounge", "Room", "House", "Club", "Spot", "Place", "Joint"]
+  const types = ["Concert", "Show", "Theater", "Festival", "Performance", "Comedy", "Music", "Live"]
+  const suffixes = ["Hall", "Center", "Theater", "Arena", "Venue", "Stage", "Auditorium", "House"]
 
   const prefix = prefixes[Math.floor(Math.random() * prefixes.length)]
   const type = types[Math.floor(Math.random() * types.length)]
@@ -464,7 +423,7 @@ function getRandomStreetName(): string {
 }
 
 export async function refreshPlace(
-  type: "restaurant" | "activity" | "drink" | "outdoor",
+  type: "restaurant" | "activity" | "outdoor" | "event",
   city: string,
   placeId?: string,
   priceRange = 0,
@@ -492,13 +451,13 @@ export async function refreshPlace(
         searchTerm = `attractions in ${sanitizedCity}`
         placeType = "tourist_attraction"
         break
-      case "drink":
-        searchTerm = `bars in ${sanitizedCity}`
-        placeType = "bar"
-        break
       case "outdoor":
         searchTerm = `parks in ${sanitizedCity}`
         placeType = "park"
+        break
+      case "event":
+        searchTerm = `events in ${sanitizedCity}`
+        placeType = "event_venue"
         break
       default:
         throw new Error("Invalid place type")
