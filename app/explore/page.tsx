@@ -267,50 +267,38 @@ export default function ExplorePage() {
     
     setIsLoading(true)
     try {
-      // For demo purposes, use mock data
-      // In production, you'd call your API here
-      const mockVenues = getMockVenues()
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      setVenues(mockVenues)
-      
-      // Optional: Try to fetch real data as well
-      /* 
-      const exploreFilters = {
-        restaurants: true,
-        activities: true,
-        outdoors: true,
-        events: true
-      }
-
-      const response = await fetch("/api/search", {
+      // Try to fetch real data from the new explore API
+      const response = await fetch("/api/explore", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           city,
-          filters: exploreFilters,
           maxResults: 20,
+          excludeIds: venues.map(v => v.id), // Exclude already loaded venues
         }),
       })
 
       if (response.ok) {
         const data = await response.json()
-        const allVenues: PlaceResult[] = []
-        if (data.restaurant) allVenues.push(data.restaurant)
-        if (data.activity) allVenues.push(data.activity)
-        if (data.outdoor) allVenues.push(data.outdoor)
-        if (data.event) allVenues.push(data.event)
+        console.log(`Loaded ${data.venues.length} real venues from API`)
         
-        setVenues([...mockVenues, ...allVenues])
+        // Use real data if available, otherwise fall back to mock data
+        if (data.venues && data.venues.length > 0) {
+          setVenues(data.venues)
+        } else {
+          console.log("No real venues found, using mock data")
+          setVenues(getMockVenues())
+        }
+      } else {
+        console.log("API request failed, using mock data")
+        setVenues(getMockVenues())
       }
-      */
     } catch (error) {
       console.error("Error loading nearby venues:", error)
       // Fallback to mock data even if API fails
+      console.log("Using mock data as fallback")
       setVenues(getMockVenues())
     } finally {
       setIsLoading(false)

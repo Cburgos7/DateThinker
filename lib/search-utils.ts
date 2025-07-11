@@ -507,3 +507,141 @@ export async function refreshPlace(
     return createFallbackPlace(sanitizedCity, type, priceRange)
   }
 } 
+
+// New function specifically for explore feature - gets multiple venues per category
+export async function searchPlacesForExplore(params: {
+  city: string
+  placeId?: string
+  maxResults?: number
+  excludeIds?: string[]
+}): Promise<PlaceResult[]> {
+  try {
+    const { city, placeId, maxResults = 20, excludeIds = [] } = params
+    
+    // Apply rate limiting
+    const userIp = "user-ip"
+    if (!checkRateLimit(`explore-${userIp}`, 20, 60000)) {
+      throw new Error("Rate limit exceeded. Please try again later.")
+    }
+
+    // Sanitize city input
+    const sanitizedCity = sanitizeInput(city)
+    
+    console.log(`Searching for explore venues in ${sanitizedCity}, max: ${maxResults}`)
+    
+    const allVenues: PlaceResult[] = []
+    
+    // Search for multiple restaurants
+    try {
+      const restaurants = await searchGooglePlaces(
+        `restaurants in ${sanitizedCity}`,
+        "restaurant",
+        undefined,
+        5000,
+        undefined,
+        undefined,
+      )
+      
+      const filteredRestaurants = restaurants
+        .filter(r => !excludeIds.includes(r.id))
+        .slice(0, Math.ceil(maxResults * 0.4)) // 40% restaurants
+        .map(r => convertGooglePlaceToResult(r, "restaurant"))
+      
+      allVenues.push(...filteredRestaurants)
+      console.log(`Added ${filteredRestaurants.length} restaurants`)
+    } catch (error) {
+      console.error("Error fetching restaurants for explore:", error)
+    }
+
+    // Search for multiple activities
+    try {
+      const activities = await searchGooglePlaces(
+        `things to do in ${sanitizedCity}`,
+        "tourist_attraction",
+        undefined,
+        5000,
+        undefined,
+        undefined,
+      )
+      
+      const filteredActivities = activities
+        .filter(a => !excludeIds.includes(a.id))
+        .slice(0, Math.ceil(maxResults * 0.3)) // 30% activities
+        .map(a => convertGooglePlaceToResult(a, "activity"))
+      
+      allVenues.push(...filteredActivities)
+      console.log(`Added ${filteredActivities.length} activities`)
+    } catch (error) {
+      console.error("Error fetching activities for explore:", error)
+    }
+
+    // Search for multiple outdoor venues
+    try {
+      const outdoorVenues = await searchGooglePlaces(
+        `parks and outdoor activities in ${sanitizedCity}`,
+        "park",
+        undefined,
+        5000,
+        undefined,
+        undefined,
+      )
+      
+      const filteredOutdoor = outdoorVenues
+        .filter(o => !excludeIds.includes(o.id))
+        .slice(0, Math.ceil(maxResults * 0.2)) // 20% outdoor
+        .map(o => convertGooglePlaceToResult(o, "outdoor"))
+      
+      allVenues.push(...filteredOutdoor)
+      console.log(`Added ${filteredOutdoor.length} outdoor venues`)
+    } catch (error) {
+      console.error("Error fetching outdoor venues for explore:", error)
+    }
+
+    // TODO: Add events from Eventbrite/Facebook/Ticketmaster APIs
+    // For now, add some fallback event venues
+    try {
+      const eventVenues = await searchGooglePlaces(
+        `entertainment venues in ${sanitizedCity}`,
+        "night_club",
+        undefined,
+        5000,
+        undefined,
+        undefined,
+      )
+      
+      const filteredEvents = eventVenues
+        .filter(e => !excludeIds.includes(e.id))
+        .slice(0, Math.ceil(maxResults * 0.1)) // 10% events
+        .map(e => convertGooglePlaceToResult(e, "event"))
+      
+      allVenues.push(...filteredEvents)
+      console.log(`Added ${filteredEvents.length} event venues`)
+    } catch (error) {
+      console.error("Error fetching event venues for explore:", error)
+    }
+
+    // If we don't have enough venues, fill with fallbacks
+    if (allVenues.length < maxResults) {
+      const fallbackNeeded = maxResults - allVenues.length
+      console.log(`Adding ${fallbackNeeded} fallback venues`)
+      
+      for (let i = 0; i < fallbackNeeded; i++) {
+        const categories: Array<"restaurant" | "activity" | "outdoor" | "event"> = 
+          ["restaurant", "activity", "outdoor", "event"]
+        const randomCategory = categories[Math.floor(Math.random() * categories.length)]
+        const fallbackVenue = createFallbackPlace(sanitizedCity, randomCategory)
+        allVenues.push(fallbackVenue)
+      }
+    }
+
+    // Shuffle the results to mix categories
+    const shuffledVenues = allVenues.sort(() => Math.random() - 0.5)
+    
+    console.log(`Returning ${shuffledVenues.length} venues for explore`)
+    return shuffledVenues.slice(0, maxResults)
+
+  } catch (error) {
+    console.error("Error in searchPlacesForExplore:", error)
+    throw error
+  }
+} 
