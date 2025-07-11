@@ -1,6 +1,8 @@
 import { z } from "zod"
 import { sanitizeInput, checkRateLimit } from "@/lib/api-utils"
 import { searchGooglePlaces, getPhotoUrl, type GooglePlace } from "@/lib/google-places"
+import { fetchAllEvents, createFallbackEvents } from "@/lib/events-api"
+import { fetchYelpRestaurants } from "@/lib/yelp-api"
 
 // Define the schema for search parameters with more strict validation
 export const searchParamsSchema = z.object({
@@ -237,7 +239,7 @@ function convertGooglePlaceToResult(
   category: "restaurant" | "activity" | "outdoor" | "event",
 ): PlaceResult {
   return {
-    id: place.id || `fallback-${category}-${Date.now()}`,
+    id: place.id ? `google-${category}-${place.id}` : `fallback-${category}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name: place.displayName?.text || place.name || "Unknown Place",
     rating: place.rating || 4.0,
     address: place.formattedAddress || "Address not available",
@@ -306,7 +308,7 @@ function createFallbackPlace(
   }
 
   return {
-    id: `fallback-${type}-${Date.now()}`,
+    id: `fallback-${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     name,
     rating,
     address,
@@ -518,9 +520,9 @@ export async function searchPlacesForExplore(params: {
   try {
     const { city, placeId, maxResults = 20, excludeIds = [] } = params
     
-    // Apply rate limiting
+    // Apply rate limiting - increased limits for explore since it makes multiple calls
     const userIp = "user-ip"
-    if (!checkRateLimit(`explore-${userIp}`, 20, 60000)) {
+    if (!checkRateLimit(`explore-${userIp}`, 50, 60000)) { // Increased from 20 to 50 requests per minute
       throw new Error("Rate limit exceeded. Please try again later.")
     }
 
@@ -531,29 +533,56 @@ export async function searchPlacesForExplore(params: {
     
     const allVenues: PlaceResult[] = []
     
-    // Search for multiple restaurants
+    // Search for multiple restaurants - enhanced with Yelp
     try {
-      const restaurants = await searchGooglePlaces(
-        `restaurants in ${sanitizedCity}`,
-        "restaurant",
-        undefined,
-        5000,
-        undefined,
-        undefined,
-      )
+      // First, try to get high-quality Yelp restaurants
+      const yelpRestaurants = await (async () => {
+        try {
+          const { fetchYelpRestaurants } = await import("@/lib/yelp-api")
+          return await fetchYelpRestaurants(
+            sanitizedCity, 
+            Math.ceil(maxResults * 0.3), // 30% from Yelp
+            0,
+            excludeIds
+          )
+        } catch (error) {
+          console.log("Yelp API not available, using Google Places only")
+          return []
+        }
+      })()
+
+      // Then get Google Places restaurants to fill remaining slots (only if billing is enabled)
+      let googleRestaurants: GooglePlace[] = []
+      try {
+        googleRestaurants = await searchGooglePlaces(
+          `restaurants in ${sanitizedCity}`,
+          "restaurant",
+          undefined,
+          5000,
+          undefined,
+          undefined,
+        )
+      } catch (error) {
+        console.log("Google Places API unavailable (billing may be disabled), using Yelp only")
+        googleRestaurants = []
+      }
       
-      const filteredRestaurants = restaurants
+      const remainingSlots = Math.ceil(maxResults * 0.4) - yelpRestaurants.length
+      const filteredGoogleRestaurants = googleRestaurants
         .filter(r => !excludeIds.includes(r.id))
-        .slice(0, Math.ceil(maxResults * 0.4)) // 40% restaurants
+        .slice(0, Math.max(0, remainingSlots)) // Fill remaining slots
         .map(r => convertGooglePlaceToResult(r, "restaurant"))
       
-      allVenues.push(...filteredRestaurants)
-      console.log(`Added ${filteredRestaurants.length} restaurants`)
+      // Combine Yelp and Google restaurants
+      const allRestaurants = [...yelpRestaurants, ...filteredGoogleRestaurants]
+      allVenues.push(...allRestaurants)
+      
+      console.log(`Added ${yelpRestaurants.length} Yelp restaurants + ${filteredGoogleRestaurants.length} Google restaurants = ${allRestaurants.length} total`)
     } catch (error) {
       console.error("Error fetching restaurants for explore:", error)
     }
 
-    // Search for multiple activities
+    // Search for multiple activities (only if Google Places is available)
     try {
       const activities = await searchGooglePlaces(
         `things to do in ${sanitizedCity}`,
@@ -572,10 +601,10 @@ export async function searchPlacesForExplore(params: {
       allVenues.push(...filteredActivities)
       console.log(`Added ${filteredActivities.length} activities`)
     } catch (error) {
-      console.error("Error fetching activities for explore:", error)
+      console.log("Google Places API unavailable for activities (billing may be disabled)")
     }
 
-    // Search for multiple outdoor venues
+    // Search for multiple outdoor venues (only if Google Places is available)
     try {
       const outdoorVenues = await searchGooglePlaces(
         `parks and outdoor activities in ${sanitizedCity}`,
@@ -594,30 +623,37 @@ export async function searchPlacesForExplore(params: {
       allVenues.push(...filteredOutdoor)
       console.log(`Added ${filteredOutdoor.length} outdoor venues`)
     } catch (error) {
-      console.error("Error fetching outdoor venues for explore:", error)
+      console.log("Google Places API unavailable for outdoor venues (billing may be disabled)")
     }
 
-    // TODO: Add events from Eventbrite/Facebook/Ticketmaster APIs
-    // For now, add some fallback event venues
+    // Search for real events using our events API
     try {
-      const eventVenues = await searchGooglePlaces(
-        `entertainment venues in ${sanitizedCity}`,
-        "night_club",
-        undefined,
-        5000,
-        undefined,
-        undefined,
+      const realEvents = await fetchAllEvents(
+        sanitizedCity,
+        Math.ceil(maxResults * 0.1), // 10% events
+        excludeIds
       )
       
-      const filteredEvents = eventVenues
-        .filter(e => !excludeIds.includes(e.id))
-        .slice(0, Math.ceil(maxResults * 0.1)) // 10% events
-        .map(e => convertGooglePlaceToResult(e, "event"))
-      
-      allVenues.push(...filteredEvents)
-      console.log(`Added ${filteredEvents.length} event venues`)
+      if (realEvents.length > 0) {
+        allVenues.push(...realEvents)
+        console.log(`Added ${realEvents.length} real events from APIs`)
+      } else {
+        // Fallback to generated events if no real events found
+        const fallbackEvents = createFallbackEvents(sanitizedCity, Math.ceil(maxResults * 0.1))
+        allVenues.push(...fallbackEvents)
+        console.log(`Added ${fallbackEvents.length} fallback events`)
+      }
     } catch (error) {
-      console.error("Error fetching event venues for explore:", error)
+      console.error("Error fetching events for explore:", error)
+      // Create fallback events as last resort
+      try {
+        const { createFallbackEvents } = await import("@/lib/events-api")
+        const fallbackEvents = createFallbackEvents(sanitizedCity, Math.ceil(maxResults * 0.1))
+        allVenues.push(...fallbackEvents)
+        console.log(`Added ${fallbackEvents.length} fallback events after error`)
+      } catch (fallbackError) {
+        console.error("Error creating fallback events:", fallbackError)
+      }
     }
 
     // If we don't have enough venues, fill with fallbacks
@@ -643,5 +679,246 @@ export async function searchPlacesForExplore(params: {
   } catch (error) {
     console.error("Error in searchPlacesForExplore:", error)
     throw error
+  }
+} 
+
+export async function searchTrendingVenues(location: string, limit: number = 10) {
+  const venues = []
+  
+  try {
+    // Get trending events (recent and popular)
+    try {
+      const trendingEvents = await fetchAllEvents(location, 3)
+      const highRatedEvents = trendingEvents.filter(event => 
+        (event.rating && event.rating >= 4.5) || event.name.toLowerCase().includes('music') || event.name.toLowerCase().includes('food')
+      )
+      venues.push(...highRatedEvents.slice(0, 2))
+    } catch (error) {
+      console.log('Events API unavailable for trending, continuing with other sources')
+    }
+
+    // Get trending restaurants (high-rated from Yelp)
+    if (process.env.YELP_API_KEY) {
+      try {
+        const yelpRestaurants = await fetchYelpRestaurants(location, 5)
+        const trendingRestaurants = yelpRestaurants.filter(r => r.rating && r.rating >= 4.5)
+        venues.push(...trendingRestaurants.slice(0, 3))
+      } catch (error) {
+        console.log('Yelp API not available for trending, using fallback')
+      }
+    }
+
+    // Get trending activities from Google Places (only if billing is enabled)
+    try {
+      const trendingActivities = await searchGooglePlaces(`attractions in ${location}`, 'tourist_attraction')
+      const highRatedActivities = trendingActivities.filter(place => place.rating && place.rating >= 4.3)
+      venues.push(...highRatedActivities.slice(0, 2).map(place => convertGooglePlaceToResult(place, 'activity')))
+    } catch (error) {
+      console.log('Google Places API unavailable for trending (billing may be disabled), using fallback')
+    }
+
+    // Get trending nightlife (only if Google Places is available)
+    try {
+      const trendingNightlife = await searchGooglePlaces(`nightlife in ${location}`, 'night_club')
+      const highRatedNightlife = trendingNightlife.filter(place => place.rating && place.rating >= 4.2)
+      venues.push(...highRatedNightlife.slice(0, 1).map(place => convertGooglePlaceToResult(place, 'activity')))
+    } catch (error) {
+      console.log('Google Places API unavailable for nightlife trending')
+    }
+
+    // Get trending outdoor spots (only if Google Places is available)
+    try {
+      const trendingOutdoor = await searchGooglePlaces(`parks in ${location}`, 'park')
+      const highRatedOutdoor = trendingOutdoor.filter(place => place.rating && place.rating >= 4.4)
+      venues.push(...highRatedOutdoor.slice(0, 1).map(place => convertGooglePlaceToResult(place, 'outdoor')))
+    } catch (error) {
+      console.log('Google Places API unavailable for outdoor trending')
+    }
+
+    // If we have very few venues, add more fallback venues
+    if (venues.length < 3) {
+      console.log('Not enough venues from APIs, adding fallback venues')
+      const fallbackVenues = getFallbackTrendingVenues(location, limit - venues.length)
+      venues.push(...fallbackVenues)
+    }
+
+    // Add trending badge to venues
+    const trendingVenues = venues.map(venue => ({
+      ...venue,
+      trending: true,
+      trending_reason: getTrendingReason(venue)
+    }))
+
+    // Sort by rating and shuffle to avoid same order
+    return trendingVenues
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, limit)
+  } catch (error) {
+    console.error('Error fetching trending venues:', error)
+    return getFallbackTrendingVenues(location, limit)
+  }
+}
+
+function getTrendingReason(venue: any): string {
+  if (venue.category === 'event') {
+    return 'Hot event'
+  } else if (venue.rating && venue.rating >= 4.7) {
+    return 'Highly rated'
+  } else if (venue.rating && venue.rating >= 4.5) {
+    return 'Popular choice'
+  } else if (venue.category === 'restaurant') {
+    return 'Food hotspot'
+  } else {
+    return 'Trending now'
+  }
+}
+
+function getFallbackTrendingVenues(location: string, limit: number) {
+  const fallbackVenues = [
+    {
+      id: 'trending-1',
+      name: 'The Skyline Lounge',
+      category: 'restaurant',
+      rating: 4.8,
+      priceLevel: 3,
+      image: 'https://images.unsplash.com/photo-1549294413-26f195200c16?w=400&h=300&fit=crop',
+      description: 'Rooftop dining with panoramic city views',
+      location: location,
+      trending: true,
+      trending_reason: 'Highly rated'
+    },
+    {
+      id: 'trending-2',
+      name: 'Urban Art Experience',
+      category: 'activity',
+      rating: 4.7,
+      priceLevel: 2,
+      image: 'https://images.unsplash.com/photo-1578321272176-b7bbc0679853?w=400&h=300&fit=crop',
+      description: 'Interactive art installation and gallery',
+      location: location,
+      trending: true,
+      trending_reason: 'Popular choice'
+    },
+    {
+      id: 'trending-3',
+      name: 'Weekend Jazz Series',
+      category: 'event',
+      rating: 4.6,
+      priceLevel: 2,
+      image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop',
+      description: 'Live jazz performance this weekend',
+      location: location,
+      trending: true,
+      trending_reason: 'Hot event'
+    },
+    {
+      id: 'trending-4',
+      name: 'Craft Beer Garden',
+      category: 'restaurant',
+      rating: 4.5,
+      priceLevel: 2,
+      image: 'https://images.unsplash.com/photo-1436076863939-06870fe779c2?w=400&h=300&fit=crop',
+      description: 'Local brewery with outdoor seating',
+      location: location,
+      trending: true,
+      trending_reason: 'Food hotspot'
+    },
+    {
+      id: 'trending-5',
+      name: 'Riverside Walking Trail',
+      category: 'outdoor',
+      rating: 4.4,
+      priceLevel: 0,
+      image: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&h=300&fit=crop',
+      description: 'Scenic trail perfect for evening walks',
+      location: location,
+      trending: true,
+      trending_reason: 'Trending now'
+    }
+  ]
+
+  return fallbackVenues.slice(0, limit)
+} 
+
+export async function getSocialData(location: string) {
+  try {
+    // This would typically query the database for real social data
+    // For now, we'll return mock data to demonstrate the concept
+    return {
+      recentActivity: [
+        {
+          id: 'activity-1',
+          type: 'favorite',
+          venue: 'Urban Art Gallery',
+          timeAgo: '2 hours ago',
+          userCount: 3
+        },
+        {
+          id: 'activity-2',
+          type: 'visit',
+          venue: 'Sunset Rooftop Bar',
+          timeAgo: '4 hours ago',
+          userCount: 7
+        },
+        {
+          id: 'activity-3',
+          type: 'plan',
+          venue: 'Central Park',
+          timeAgo: '6 hours ago',
+          userCount: 2
+        }
+      ],
+      popularThisWeek: [
+        {
+          venue: 'The Skyline Lounge',
+          interactions: 24,
+          favorites: 8,
+          plans: 5
+        },
+        {
+          venue: 'Jazz & Wine Bar',
+          interactions: 19,
+          favorites: 12,
+          plans: 3
+        },
+        {
+          venue: 'Artisan Coffee House',
+          interactions: 16,
+          favorites: 6,
+          plans: 4
+        }
+      ],
+      totalUsersExploring: 47,
+      totalVenuesViewed: 156
+    }
+  } catch (error) {
+    console.error('Error fetching social data:', error)
+    return {
+      recentActivity: [],
+      popularThisWeek: [],
+      totalUsersExploring: 0,
+      totalVenuesViewed: 0
+    }
+  }
+}
+
+export async function getVenueSocialProof(venueId: string) {
+  try {
+    // This would typically query the database for real social proof
+    // For now, we'll return mock data
+    return {
+      recentVisitors: Math.floor(Math.random() * 20) + 1,
+      timeFrame: 'this week',
+      recentlyFavorited: Math.floor(Math.random() * 10) + 1,
+      includedInPlans: Math.floor(Math.random() * 5) + 1
+    }
+  } catch (error) {
+    console.error('Error fetching venue social proof:', error)
+    return {
+      recentVisitors: 0,
+      timeFrame: 'this week',
+      recentlyFavorited: 0,
+      includedInPlans: 0
+    }
   }
 } 
