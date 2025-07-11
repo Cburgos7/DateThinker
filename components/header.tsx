@@ -14,7 +14,8 @@ import {
   User,
   ChevronDown,
   Bookmark,
-  Star
+  Star,
+  Compass
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -96,6 +97,11 @@ export function Header({ isLoggedIn, userName, avatarUrl }: HeaderProps = {}) {
             <Link href="/make-date" className="flex items-center space-x-1 text-sm font-medium hover:text-rose-500">
               <Calendar className="h-4 w-4" />
               <span>Make a Date</span>
+            </Link>
+            
+            <Link href="/explore" className="flex items-center space-x-1 text-sm font-medium hover:text-purple-500">
+              <Compass className="h-4 w-4" />
+              <span>Explore</span>
             </Link>
             
             {/* My Dates Dropdown */}

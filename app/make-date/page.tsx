@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   RefreshCcw,
   Search,
@@ -41,6 +41,7 @@ import { VENUE_TYPE_OPTIONS } from "@/lib/types"
 
 export default function Page() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   // Remove old supabase instance - we'll create clients as needed
   const { user, isLoading: isLoadingUser } = useAuth()
   const [city, setCity] = useState("")
@@ -77,6 +78,25 @@ export default function Page() {
     drink?: boolean
     outdoor?: boolean
   }>({})
+
+  // Handle URL parameters from explore page
+  useEffect(() => {
+    if (!searchParams) return
+    
+    const venueId = searchParams.get('venue')
+    const cityParam = searchParams.get('city')
+    
+    if (cityParam) {
+      setCity(decodeURIComponent(cityParam))
+    }
+    
+    // Note: In a full implementation, you'd want to fetch the specific venue
+    // and pre-populate the results. For now, we just set the city.
+    if (venueId) {
+      console.log('Venue pre-selected from explore page:', venueId)
+      // You could fetch the specific venue here and add it to results
+    }
+  }, [searchParams])
 
   // Fetch user subscription status when user changes
   useEffect(() => {
