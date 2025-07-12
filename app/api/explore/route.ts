@@ -1,8 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { searchPlacesForExplore, searchTrendingVenues, getSocialData, searchSpecificVenues } from '@/lib/search-utils'
+import { type PlaceResult } from '@/lib/search-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+// Transform PlaceResult to match explore page expectations
+function transformVenueForExplore(venue: PlaceResult | any) {
+  return {
+    id: venue.id,
+    name: venue.name,
+    rating: venue.rating,
+    priceLevel: venue.price || venue.priceLevel,
+    image: venue.photoUrl || venue.image, // Map photoUrl to image, or use existing image
+    photos: venue.photoUrl ? [venue.photoUrl] : (venue.image ? [venue.image] : []),
+    description: getVenueDescription(venue),
+    category: venue.category,
+    address: venue.address || venue.location,
+    phone: venue.phone, // Add phone field
+    website: venue.website, // Add website field
+    openNow: venue.openNow,
+    isFavorite: false, // TODO: Check actual favorite status
+    trending: venue.trending || false,
+    trending_reason: venue.trending_reason || undefined,
+  }
+}
+
+// Generate appropriate descriptions based on venue type
+function getVenueDescription(venue: PlaceResult | any): string {
+  const category = venue.category
+  const name = venue.name
+  
+  // If venue already has a description, use it
+  if (venue.description) {
+    return venue.description
+  }
+  
+  if (category === 'event') {
+    return `Join us for ${name.toLowerCase()}. An exciting event experience awaits!`
+  } else if (category === 'restaurant') {
+    return `Enjoy delicious dining at ${name}. Perfect for a memorable meal together.`
+  } else if (category === 'activity') {
+    return `Discover ${name} and create unforgettable memories together.`
+  } else if (category === 'outdoor') {
+    return `Experience the beauty of ${name}. Perfect for outdoor enthusiasts.`
+  }
+  
+  return `Discover something special at ${name}.`
+}
 
 export async function POST(request: Request) {
   console.log("[Explore API] POST request received")
@@ -38,7 +83,7 @@ export async function POST(request: Request) {
     console.log(`[Explore API] Found ${venues.length} venues for ${body.city} (page ${page})`)
 
     return NextResponse.json({
-      venues,
+      venues: venues.map(transformVenueForExplore),
       pagination: {
         currentPage: page,
         hasMore,
@@ -82,7 +127,7 @@ export async function GET(request: NextRequest) {
     if (trending) {
       const trendingVenues = await searchTrendingVenues(city, limit)
       return NextResponse.json({ 
-        venues: trendingVenues, 
+        venues: trendingVenues.map(transformVenueForExplore), 
         hasMore: false, // Trending results are limited
         page: 1,
         totalPages: 1
@@ -99,7 +144,7 @@ export async function GET(request: NextRequest) {
       })
       
       return NextResponse.json({ 
-        venues: searchResults, 
+        venues: searchResults.map(transformVenueForExplore), 
         hasMore: false, // Search results don't paginate 
         page: 1,
         totalPages: 1
@@ -122,7 +167,7 @@ export async function GET(request: NextRequest) {
     const hasMore = venues.length > offset + limit
 
     return NextResponse.json({ 
-      venues: currentPageVenues, 
+      venues: currentPageVenues.map(transformVenueForExplore), 
       hasMore,
       page,
       totalPages: Math.ceil(venues.length / limit)

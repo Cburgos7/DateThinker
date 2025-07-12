@@ -14,6 +14,8 @@ export async function GET(
       return NextResponse.json({ error: 'Venue ID is required' }, { status: 400 })
     }
 
+    console.log(`Fetching venue details for ID: ${venueId}`)
+
     // Try to fetch enhanced details based on venue ID type
     let enhancedDetails = null
 
@@ -31,16 +33,33 @@ export async function GET(
     else if (venueId.startsWith('eventbrite-') || venueId.startsWith('ticketmaster-')) {
       enhancedDetails = await fetchEventDetails(venueId)
     }
+    // Handle fallback and mock venues
+    else if (venueId.startsWith('fallback-') || venueId.startsWith('mock-')) {
+      enhancedDetails = await createFallbackVenueDetails(venueId)
+    }
+    // Handle any other venue format
+    else {
+      console.log(`Unknown venue ID format: ${venueId}, creating fallback details`)
+      enhancedDetails = await createFallbackVenueDetails(venueId)
+    }
 
     if (enhancedDetails) {
       return NextResponse.json(enhancedDetails)
     } else {
-      return NextResponse.json({ error: 'Venue details not found' }, { status: 404 })
+      // If all else fails, create basic fallback details
+      const fallbackDetails = await createFallbackVenueDetails(venueId)
+      return NextResponse.json(fallbackDetails)
     }
 
   } catch (error) {
     console.error('Error fetching venue details:', error)
-    return NextResponse.json({ error: 'Failed to fetch venue details' }, { status: 500 })
+    // Return fallback details instead of error
+    try {
+      const fallbackDetails = await createFallbackVenueDetails(params.id)
+      return NextResponse.json(fallbackDetails)
+    } catch (fallbackError) {
+      return NextResponse.json({ error: 'Failed to fetch venue details' }, { status: 500 })
+    }
   }
 }
 
@@ -96,42 +115,12 @@ async function fetchYelpBusinessDetails(businessId: string) {
 async function fetchGooglePlaceDetails(placeId: string) {
   try {
     // This would use Google Places Details API
-    // For now, return enhanced mock data
-    return {
-      id: `google-${placeId}`,
-      name: "Enhanced Place Details",
-      rating: 4.5,
-      priceLevel: 3,
-      photos: [
-        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&h=400&fit=crop',
-        'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=600&h=400&fit=crop',
-        'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=600&h=400&fit=crop'
-      ],
-      description: "A wonderful place to visit with great atmosphere and excellent service.",
-      category: 'activity',
-      address: "123 Main St, City, State 12345",
-      phone: "(555) 123-4567",
-      website: "https://example.com",
-      hours: {
-        'Monday': '9:00 AM - 9:00 PM',
-        'Tuesday': '9:00 AM - 9:00 PM',
-        'Wednesday': '9:00 AM - 9:00 PM',
-        'Thursday': '9:00 AM - 10:00 PM',
-        'Friday': '9:00 AM - 10:00 PM',
-        'Saturday': '8:00 AM - 10:00 PM',
-        'Sunday': '8:00 AM - 8:00 PM'
-      },
-      openNow: true,
-      reviews: [
-        {
-          author: "Google User",
-          rating: 5,
-          text: "Excellent place, highly recommend!",
-          timeAgo: "1 week ago"
-        }
-      ],
-      amenities: ['Family Friendly', 'Parking Available', 'Wi-Fi']
-    }
+    // For now, fall back to our intelligent fallback system
+    console.log(`Google Places Details API not implemented, using fallback for place ID: ${placeId}`)
+    
+    // Create a venue ID that includes the place ID for better fallback handling
+    const fallbackVenueId = `google-place-${placeId}`
+    return await createFallbackVenueDetails(fallbackVenueId)
 
   } catch (error) {
     console.error('Error fetching Google Place details:', error)
@@ -359,9 +348,123 @@ function transformYelpHours(yelpHours: any) {
 }
 
 function formatTime(timeString: string) {
-  const hour = parseInt(timeString.slice(0, 2))
-  const minute = timeString.slice(2)
-  const ampm = hour >= 12 ? 'PM' : 'AM'
-  const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour)
-  return `${displayHour}:${minute} ${ampm}`
+  try {
+    const time = new Date(`1970-01-01T${timeString}:00`)
+    return time.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: true 
+    })
+  } catch (error) {
+    return timeString
+  }
+}
+
+// Create minimal venue details with only verified information
+async function createFallbackVenueDetails(venueId: string) {
+  try {
+    // Try to determine category from venue ID
+    let category: 'restaurant' | 'activity' | 'outdoor' | 'event' = 'activity'
+    let venueName = 'Unknown Venue'
+    
+    // Extract category from ID patterns
+    if (venueId.includes('restaurant') || venueId.includes('cafe') || venueId.includes('bar')) {
+      category = 'restaurant'
+    } else if (venueId.includes('park') || venueId.includes('outdoor') || venueId.includes('trail') || venueId.includes('garden')) {
+      category = 'outdoor'
+    } else if (venueId.includes('event') || venueId.includes('concert') || venueId.includes('theater')) {
+      category = 'event'
+    } else if (venueId.includes('activity') || venueId.includes('museum') || venueId.includes('gallery')) {
+      category = 'activity'
+    }
+    
+    // Parse venue name from common ID formats
+    if (venueId.startsWith('fallback-') || venueId.startsWith('mock-')) {
+      // Try to extract venue name from fallback IDs
+      const parts = venueId.split('-')
+      if (parts.length > 2) {
+        const nameIndex = parts.findIndex(part => part.match(/^[A-Z][a-z]/))
+        if (nameIndex !== -1) {
+          venueName = parts.slice(nameIndex).join(' ').replace(/\d+/g, '').trim()
+        }
+      }
+    }
+    
+    // Special handling for known venue names - extract from ID
+    if (venueId.toLowerCase().includes('mears') && venueId.toLowerCase().includes('park')) {
+      venueName = 'Mears Park'
+      category = 'outdoor'
+    } else if (venueId.toLowerCase().includes('capitol')) {
+      venueName = 'Minnesota State Capitol'
+      category = 'activity'
+    }
+    
+    // Generate category-appropriate images (this is the only "made up" data we'll provide)
+    const categoryImages = {
+      restaurant: [
+        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=600&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=600&h=400&fit=crop'
+      ],
+      activity: [
+        'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=600&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&h=400&fit=crop'
+      ],
+      outdoor: [
+        'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=600&h=400&fit=crop', // Forest park
+        'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&h=400&fit=crop', // Mountain landscape
+        'https://images.unsplash.com/photo-1574263867128-a3e6a329d3d4?w=600&h=400&fit=crop', // City park
+        'https://images.unsplash.com/photo-1565008447742-97f6f38c985c?w=600&h=400&fit=crop', // Park pathway
+        'https://images.unsplash.com/photo-1599608404398-4e6fd1c2e8dc?w=600&h=400&fit=crop'  // Urban park
+      ],
+      event: [
+        'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=600&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=600&h=400&fit=crop',
+        'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=600&h=400&fit=crop'
+      ]
+    }
+    
+    // Only provide the basic information we have
+    return {
+      id: venueId,
+      name: venueName,
+      photos: categoryImages[category],
+      description: "Limited information available for this venue.",
+      category: category,
+      // Don't provide fake contact info, hours, etc.
+      address: undefined,
+      phone: undefined,
+      website: undefined,
+      hours: undefined,
+      openNow: undefined,
+      rating: undefined,
+      priceLevel: undefined,
+      reviews: [],
+      amenities: [],
+      coordinates: undefined
+    }
+    
+  } catch (error) {
+    console.error('Error creating fallback venue details:', error)
+    // Return very basic fallback
+    return {
+      id: venueId,
+      name: "Venue",
+      photos: [
+        'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=600&h=400&fit=crop'
+      ],
+      description: "Information unavailable for this venue.",
+      category: 'activity',
+      address: undefined,
+      phone: undefined,
+      website: undefined,
+      hours: undefined,
+      openNow: undefined,
+      rating: undefined,
+      priceLevel: undefined,
+      reviews: [],
+      amenities: []
+    }
+  }
 } 

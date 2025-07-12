@@ -243,11 +243,26 @@ export default function ExplorePage() {
     }
   }, [userLocation, locationPermission]) // Only load when we have a real location
 
-  // Filter venues based on category (search now triggers API calls)
-  const filteredVenues = useMemo(() => venues.filter(venue => {
-    const matchesCategory = selectedCategory === 'all' || venue.category === selectedCategory
-    return matchesCategory
-  }), [venues, selectedCategory])
+  // Filter venues based on active filters
+  const filteredVenues = useMemo(() => {
+    return venues.filter(venue => {
+      // Check if any filters are active
+      const hasActiveFilters = Object.values(activeFilters).some(filter => filter)
+      
+      // If no filters are active, show all venues
+      if (!hasActiveFilters) {
+        return true
+      }
+      
+      // If filters are active, only show venues that match the selected categories
+      const matchesRestaurants = activeFilters.restaurants && venue.category === 'restaurant'
+      const matchesActivities = activeFilters.activities && venue.category === 'activity'
+      const matchesOutdoors = activeFilters.outdoors && venue.category === 'outdoor'
+      const matchesEvents = activeFilters.events && venue.category === 'event'
+      
+      return matchesRestaurants || matchesActivities || matchesOutdoors || matchesEvents
+    })
+  }, [venues, activeFilters])
 
   const handlePlanDate = (venue: Venue) => {
     // Navigate to make-date page with pre-selected venue
@@ -365,26 +380,48 @@ export default function ExplorePage() {
           className="w-full h-48 object-cover rounded-t-lg"
           onError={(e) => {
             const target = e.target as HTMLImageElement
-            target.src = 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80'
+            // Use category-specific fallback images
+            let fallbackImage = 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80'
+            
+            if (venue.category === 'event') {
+              fallbackImage = 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?q=80&w=600&auto=format&fit=crop'
+            } else if (venue.category === 'restaurant') {
+              fallbackImage = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=600&auto=format&fit=crop'
+            } else if (venue.category === 'activity') {
+              fallbackImage = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=600&auto=format&fit=crop'
+            } else if (venue.category === 'outdoor') {
+              fallbackImage = 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=600&auto=format&fit=crop'
+            }
+            
+            target.src = fallbackImage
           }}
         />
+        {/* Add disclaimer for generic event images */}
+        {venue.category === 'event' && (
+          <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center">
+            <Camera className="w-3 h-3 mr-1" />
+            Sample Image
+          </div>
+        )}
         {showTrendingBadge && venue.trending && (
-          <Badge className="absolute top-2 left-2 bg-orange-500 text-white">
+          <Badge className="absolute top-2 right-2 bg-orange-500 text-white">
             <TrendingUp className="w-3 h-3 mr-1" />
             {venue.trending_reason || 'Trending'}
           </Badge>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute top-2 right-2 bg-white/80 hover:bg-white"
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleFavorite(venue.id)
-          }}
-        >
-          <Heart className={`w-4 h-4 ${venue.isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
-        </Button>
+        {!showTrendingBadge && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute top-2 right-2 bg-white/80 hover:bg-white"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleFavorite(venue.id)
+            }}
+          >
+            <Heart className={`w-4 h-4 ${venue.isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
+          </Button>
+        )}
       </div>
       
       <CardContent className="p-4">

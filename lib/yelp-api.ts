@@ -245,7 +245,7 @@ function convertYelpToPlaceResult(business: YelpBusiness): PlaceResult {
     rating: business.rating,
     price,
     category: 'restaurant',
-    photoUrl: business.image_url || undefined,
+    photoUrl: business.image_url || undefined, // Only real images, no fallbacks
     openNow,
     placeId: business.id,
     // Additional Yelp-specific data we can store

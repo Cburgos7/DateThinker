@@ -82,72 +82,83 @@ export function VenueDetailsModal({
     }
   }, [venue, isOpen])
 
+  // Helper function to generate category-appropriate fallback images
+  const generateCategoryImage = (category: string) => {
+    const categoryImages = {
+      restaurant: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&h=400&fit=crop',
+      activity: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=600&h=400&fit=crop',
+      outdoor: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=600&h=400&fit=crop',
+      event: 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=600&h=400&fit=crop'
+    }
+    return categoryImages[category as keyof typeof categoryImages] || categoryImages.activity
+  }
+
+  // Helper function to generate category-appropriate descriptions
+  const generateCategoryDescription = (category: string) => {
+    const categoryDescriptions = {
+      restaurant: "A dining establishment offering food and beverages.",
+      activity: "An interesting place to visit and explore.",
+      outdoor: "An outdoor location perfect for recreation and relaxation.",
+      event: "A special event or gathering."
+    }
+    return categoryDescriptions[category as keyof typeof categoryDescriptions] || "Limited information available for this venue."
+  }
+
   const fetchVenueDetails = async (basicVenue: VenueDetails) => {
     setLoading(true)
     try {
-      // Try to fetch enhanced details from our API
-      const response = await fetch(`/api/venue-details/${encodeURIComponent(basicVenue.id)}`)
-      
-      if (response.ok) {
-        const enhancedDetails = await response.json()
-        setDetailedVenue(enhancedDetails)
-      } else {
-        // Fallback to basic venue info with mock enhanced data
-        setDetailedVenue({
-          ...basicVenue,
-          photos: basicVenue.photos || [
-            basicVenue.image || 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=600&h=400&fit=crop',
-            'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&h=400&fit=crop',
-            'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=600&h=400&fit=crop'
-          ],
-          hours: {
-            'Monday': '9:00 AM - 10:00 PM',
-            'Tuesday': '9:00 AM - 10:00 PM', 
-            'Wednesday': '9:00 AM - 10:00 PM',
-            'Thursday': '9:00 AM - 11:00 PM',
-            'Friday': '9:00 AM - 11:00 PM',
-            'Saturday': '8:00 AM - 11:00 PM',
-            'Sunday': '8:00 AM - 9:00 PM'
-          },
-          reviews: [
-            {
-              author: "Sarah M.",
-              rating: 5,
-              text: "Amazing experience! Great atmosphere and friendly staff.",
-              timeAgo: "2 weeks ago"
-            },
-            {
-              author: "Mike R.",
-              rating: 4,
-              text: "Really enjoyed our visit. Would definitely recommend.",
-              timeAgo: "1 month ago"
-            }
-          ],
-          amenities: getAmenitiesForCategory(basicVenue.category),
-          phone: basicVenue.phone || `(${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
-          website: `https://www.${basicVenue.name.toLowerCase().replace(/\s+/g, '')}.com`
-        })
+      // Determine if this venue benefits from enhanced details via API
+      const shouldFetchEnhancedDetails = (
+        basicVenue.id.startsWith('yelp-') ||
+        basicVenue.id.startsWith('eventbrite-') ||
+        basicVenue.id.startsWith('ticketmaster-')
+      )
+
+      if (shouldFetchEnhancedDetails) {
+        // Only make API calls for venues that benefit from enhanced details
+        const response = await fetch(`/api/venue-details/${encodeURIComponent(basicVenue.id)}`)
+        
+        if (response.ok) {
+          const enhancedDetails = await response.json()
+          setDetailedVenue(enhancedDetails)
+          return
+        }
       }
+
+      // For Google Places venues or when API calls fail, use the existing good data
+      setDetailedVenue({
+        ...basicVenue,
+        photos: basicVenue.photos || [
+          basicVenue.image || generateCategoryImage(basicVenue.category)
+        ],
+        description: basicVenue.description || generateCategoryDescription(basicVenue.category),
+        // Preserve existing real data - this is the key fix!
+        address: basicVenue.address || undefined,
+        phone: basicVenue.phone || undefined,
+        website: basicVenue.website || undefined,
+        hours: basicVenue.hours || undefined,
+        reviews: basicVenue.reviews || [],
+        amenities: basicVenue.amenities || []
+      })
+
     } catch (error) {
       console.error('Error fetching venue details:', error)
-      setDetailedVenue(basicVenue)
+      // Fallback to basic venue info, preserving real data
+      setDetailedVenue({
+        ...basicVenue,
+        photos: basicVenue.photos || [
+          basicVenue.image || generateCategoryImage(basicVenue.category)
+        ],
+        description: basicVenue.description || "Limited information available for this venue.",
+        address: basicVenue.address || undefined,
+        phone: basicVenue.phone || undefined,
+        website: basicVenue.website || undefined,
+        hours: basicVenue.hours || undefined,
+        reviews: basicVenue.reviews || [],
+        amenities: basicVenue.amenities || []
+      })
     } finally {
       setLoading(false)
-    }
-  }
-
-  const getAmenitiesForCategory = (category: string): string[] => {
-    switch (category) {
-      case 'restaurant':
-        return ['Wi-Fi', 'Outdoor Seating', 'Accepts Credit Cards', 'Wheelchair Accessible', 'Parking Available']
-      case 'activity':
-        return ['Family Friendly', 'Group Discounts', 'Gift Shop', 'Guided Tours', 'Photography Allowed']
-      case 'outdoor':
-        return ['Pet Friendly', 'Picnic Area', 'Restrooms', 'Parking', 'Walking Trails']
-      case 'event':
-        return ['Advance Booking', 'Age Restrictions', 'Refreshments', 'Seating Available', 'Photography']
-      default:
-        return ['Wi-Fi', 'Parking', 'Wheelchair Accessible']
     }
   }
 
@@ -180,6 +191,10 @@ export function VenueDetailsModal({
     if (detailedVenue?.address) {
       const encodedAddress = encodeURIComponent(detailedVenue.address)
       window.open(`https://maps.google.com/?q=${encodedAddress}`, '_blank')
+    } else {
+      // If no address, try to search by venue name
+      const encodedName = encodeURIComponent(detailedVenue?.name || 'venue')
+      window.open(`https://maps.google.com/?q=${encodedName}`, '_blank')
     }
   }
 
@@ -221,6 +236,13 @@ export function VenueDetailsModal({
                     alt={detailedVenue.name}
                     className="w-full h-full object-cover"
                   />
+                  {/* Add disclaimer for generic event images */}
+                  {detailedVenue.category === 'event' && (
+                    <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center">
+                      <Camera className="w-3 h-3 mr-1" />
+                      Generic Event Image
+                    </div>
+                  )}
                   {detailedVenue.photos.length > 1 && (
                     <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
                       {activePhotoIndex + 1} / {detailedVenue.photos.length}
@@ -242,11 +264,18 @@ export function VenueDetailsModal({
                     ))}
                   </div>
                 )}
+                
+                {/* Additional disclaimer text for events */}
+                {detailedVenue.category === 'event' && (
+                  <p className="text-xs text-gray-500 italic">
+                    📸 Image shown is for illustration purposes only and may not represent the actual event or venue.
+                  </p>
+                )}
               </div>
             )}
 
             {/* Basic Info */}
-            <div className="flex items-center justify-between">
+            <div className="space-y-3">
               <div className="flex items-center space-x-4">
                 <Badge variant="outline" className="capitalize">
                   {detailedVenue.category}
@@ -257,19 +286,22 @@ export function VenueDetailsModal({
                     <span className="font-medium">{detailedVenue.rating}</span>
                   </div>
                 )}
-                {detailedVenue.priceLevel && (
-                  <div className="flex items-center">
-                    {[...Array(detailedVenue.priceLevel)].map((_, i) => (
-                      <DollarSign key={i} className="w-4 h-4 text-green-600" />
-                    ))}
-                  </div>
-                )}
-                {detailedVenue.openNow !== undefined && (
+                {detailedVenue.openNow !== undefined && detailedVenue.openNow !== null && (
                   <Badge variant={detailedVenue.openNow ? "default" : "secondary"}>
                     {detailedVenue.openNow ? 'Open Now' : 'Closed'}
                   </Badge>
                 )}
               </div>
+              
+              {/* Show information availability notice */}
+              {(!detailedVenue.address && !detailedVenue.phone && !detailedVenue.website && !detailedVenue.hours) && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <p className="text-sm text-yellow-800">
+                    <span className="font-medium">Limited Information:</span> Detailed venue information is not available. 
+                    We recommend searching online or contacting the venue directly for accurate details.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Description */}
@@ -312,53 +344,58 @@ export function VenueDetailsModal({
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Contact & Location */}
-              <Card>
-                <CardContent className="p-4">
-                  <h3 className="font-semibold mb-3">Contact & Location</h3>
-                  <div className="space-y-2 text-sm">
+              {/* Contact & Location - Only show if we have actual data */}
+              {(detailedVenue.address || detailedVenue.phone || detailedVenue.website) && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold mb-3">Contact & Location</h3>
+                    <div className="space-y-2 text-sm">
+                      {detailedVenue.address && (
+                        <div className="flex items-start space-x-2">
+                          <MapPin className="w-4 h-4 mt-0.5 text-gray-500" />
+                          <span>{detailedVenue.address}</span>
+                        </div>
+                      )}
+                      {detailedVenue.phone && (
+                        <div className="flex items-center space-x-2">
+                          <Phone className="w-4 h-4 text-gray-500" />
+                          <a href={`tel:${detailedVenue.phone}`} className="text-blue-600 hover:underline">
+                            {detailedVenue.phone}
+                          </a>
+                        </div>
+                      )}
+                      {detailedVenue.website && (
+                        <div className="flex items-center space-x-2">
+                          <Globe className="w-4 h-4 text-gray-500" />
+                          <a 
+                            href={detailedVenue.website} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline flex items-center"
+                          >
+                            Visit Website <ExternalLink className="w-3 h-3 ml-1" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                    
                     {detailedVenue.address && (
-                      <div className="flex items-start space-x-2">
-                        <MapPin className="w-4 h-4 mt-0.5 text-gray-500" />
-                        <span>{detailedVenue.address}</span>
-                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-3 w-full"
+                        onClick={openDirections}
+                      >
+                        <Navigation className="w-4 h-4 mr-2" />
+                        Get Directions
+                      </Button>
                     )}
-                    {detailedVenue.phone && (
-                      <div className="flex items-center space-x-2">
-                        <Phone className="w-4 h-4 text-gray-500" />
-                        <a href={`tel:${detailedVenue.phone}`} className="text-blue-600 hover:underline">
-                          {detailedVenue.phone}
-                        </a>
-                      </div>
-                    )}
-                    {detailedVenue.website && (
-                      <div className="flex items-center space-x-2">
-                        <Globe className="w-4 h-4 text-gray-500" />
-                        <a 
-                          href={detailedVenue.website} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline flex items-center"
-                        >
-                          Visit Website <ExternalLink className="w-3 h-3 ml-1" />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="mt-3 w-full"
-                    onClick={openDirections}
-                  >
-                    <Navigation className="w-4 h-4 mr-2" />
-                    Get Directions
-                  </Button>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* Hours */}
-              {detailedVenue.hours && (
+              {/* Hours - Only show if we have actual data */}
+              {detailedVenue.hours && Object.keys(detailedVenue.hours).length > 0 && (
                 <Card>
                   <CardContent className="p-4">
                     <h3 className="font-semibold mb-3 flex items-center">
@@ -378,7 +415,7 @@ export function VenueDetailsModal({
               )}
             </div>
 
-            {/* Amenities */}
+            {/* Amenities - Only show if we have actual data */}
             {detailedVenue.amenities && detailedVenue.amenities.length > 0 && (
               <Card>
                 <CardContent className="p-4">
@@ -394,7 +431,7 @@ export function VenueDetailsModal({
               </Card>
             )}
 
-            {/* Reviews */}
+            {/* Reviews - Only show if we have actual data */}
             {detailedVenue.reviews && detailedVenue.reviews.length > 0 && (
               <Card>
                 <CardContent className="p-4">
