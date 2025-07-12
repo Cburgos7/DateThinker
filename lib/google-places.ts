@@ -1,6 +1,6 @@
 import { sanitizeInput } from "./api-utils"
 
-// Types for Google Places API responses
+// Enhanced types for Google Places API responses
 export type GooglePlace = {
   id: string
   displayName?: {
@@ -16,7 +16,40 @@ export type GooglePlace = {
   }>
   regularOpeningHours?: {
     openNow?: boolean
+    weekdayDescriptions?: string[]
   }
+  currentOpeningHours?: {
+    openNow?: boolean
+    weekdayDescriptions?: string[]
+  }
+  nationalPhoneNumber?: string
+  internationalPhoneNumber?: string
+  websiteUri?: string
+  editorialSummary?: {
+    text: string
+  }
+  primaryTypeDisplayName?: {
+    text: string
+  }
+  accessibilityOptions?: {
+    wheelchairAccessibleParking?: boolean
+    wheelchairAccessibleEntrance?: boolean
+    wheelchairAccessibleRestroom?: boolean
+    wheelchairAccessibleSeating?: boolean
+  }
+  goodForChildren?: boolean
+  allowsDogs?: boolean
+  reviews?: Array<{
+    name: string
+    relativePublishTimeDescription: string
+    rating: number
+    text: {
+      text: string
+    }
+    authorAttribution: {
+      displayName: string
+    }
+  }>
 }
 
 export type PlacesSearchResponse = {
@@ -54,6 +87,84 @@ export function getPhotoUrl(photoName: string, maxWidth = 600): string {
     // Fallback to a placeholder image
     return `/placeholder.svg?height=400&width=${maxWidth}`
   }
+}
+
+// Enhanced field mask to get rich venue information
+const ENHANCED_FIELD_MASK = [
+  "places.id",
+  "places.displayName", 
+  "places.formattedAddress",
+  "places.rating",
+  "places.priceLevel",
+  "places.types",
+  "places.photos",
+  "places.regularOpeningHours",
+  "places.currentOpeningHours",
+  "places.nationalPhoneNumber",
+  "places.internationalPhoneNumber", 
+  "places.websiteUri",
+  "places.editorialSummary",
+  "places.primaryTypeDisplayName",
+  "places.accessibilityOptions",
+  "places.goodForChildren",
+  "places.allowsDogs",
+  "places.reviews"
+].join(",")
+
+// Helper function to extract amenities from Google Places data
+export function extractAmenities(place: GooglePlace): string[] {
+  const amenities: string[] = []
+  
+  if (place.accessibilityOptions?.wheelchairAccessibleEntrance) {
+    amenities.push("Wheelchair Accessible")
+  }
+  if (place.accessibilityOptions?.wheelchairAccessibleParking) {
+    amenities.push("Accessible Parking")
+  }
+  if (place.accessibilityOptions?.wheelchairAccessibleRestroom) {
+    amenities.push("Accessible Restroom")
+  }
+  if (place.goodForChildren) {
+    amenities.push("Good for Kids")
+  }
+  if (place.allowsDogs) {
+    amenities.push("Dog Friendly")
+  }
+  
+  return amenities
+}
+
+// Helper function to extract opening hours
+export function extractOpeningHours(place: GooglePlace): { [key: string]: string } | undefined {
+  const hours = place.currentOpeningHours?.weekdayDescriptions || place.regularOpeningHours?.weekdayDescriptions
+  if (!hours) return undefined
+  
+  const hoursObj: { [key: string]: string } = {}
+  hours.forEach(dayHours => {
+    const [day, ...timeParts] = dayHours.split(': ')
+    if (day && timeParts.length > 0) {
+      hoursObj[day] = timeParts.join(': ')
+    }
+  })
+  
+  return hoursObj
+}
+
+// Helper function to extract reviews
+export function extractReviews(place: GooglePlace): Array<{
+  author: string
+  rating: number
+  text: string
+  timeAgo: string
+}> {
+  if (!place.reviews) return []
+  
+  return place.reviews.slice(0, 3).map(review => ({
+    author: review.authorAttribution.displayName,
+    rating: review.rating,
+    text: review.text.text,
+    timeAgo: review.relativePublishTimeDescription
+  }))
 }
 
 // Function to search for places using Google Places API v1
@@ -100,14 +211,13 @@ export async function searchGooglePlaces(
       throw new Error("Google API key is not configured")
     }
 
-    // Make the API request to Places API v1
+    // Make the API request to Places API v1 with enhanced field mask
     const response = await fetch(`https://places.googleapis.com/v1/places:searchText`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask":
-          "places.id,places.displayName,places.formattedAddress,places.rating,places.priceLevel,places.types,places.photos,places.regularOpeningHours",
+        "X-Goog-FieldMask": ENHANCED_FIELD_MASK, // Use enhanced field mask
       },
       body: JSON.stringify(requestBody),
       cache: "no-store",
@@ -129,6 +239,16 @@ export async function searchGooglePlaces(
     if (data.places && data.places.length > 0) {
       data.places.slice(0, 3).forEach((place: any, index: number) => {
         console.log(`Result ${index + 1}: ${place.displayName?.text}, ${place.formattedAddress}`)
+        // Log additional rich data if available
+        if (place.nationalPhoneNumber) {
+          console.log(`  Phone: ${place.nationalPhoneNumber}`)
+        }
+        if (place.websiteUri) {
+          console.log(`  Website: ${place.websiteUri}`)
+        }
+        if (place.editorialSummary?.text) {
+          console.log(`  Description: ${place.editorialSummary.text.substring(0, 100)}...`)
+        }
       })
     }
 
