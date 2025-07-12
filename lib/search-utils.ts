@@ -922,3 +922,149 @@ export async function getVenueSocialProof(venueId: string) {
     }
   }
 } 
+
+// New function to search for specific venues by name
+export async function searchSpecificVenues(params: {
+  city: string
+  searchQuery: string
+  maxResults?: number
+  excludeIds?: string[]
+}): Promise<PlaceResult[]> {
+  try {
+    const { city, searchQuery, maxResults = 50, excludeIds = [] } = params
+    
+    // Apply rate limiting
+    const userIp = "user-ip"
+    if (!checkRateLimit(`search-${userIp}`, 30, 60000)) {
+      throw new Error("Search rate limit exceeded. Please try again later.")
+    }
+
+    // Sanitize inputs
+    const sanitizedCity = sanitizeInput(city)
+    const sanitizedQuery = sanitizeInput(searchQuery)
+    
+    console.log(`Searching for "${sanitizedQuery}" in ${sanitizedCity}`)
+    
+    const allResults: PlaceResult[] = []
+    
+    // Search Google Places for the specific query
+    try {
+      const places = await searchGooglePlaces(
+        `${sanitizedQuery} in ${sanitizedCity}`,
+        "establishment", // General establishment type
+        undefined,
+        5000,
+        undefined,
+        undefined,
+      )
+      
+      // Convert and categorize results
+      const searchResults = places
+        .filter(place => !excludeIds.includes(place.id))
+        .slice(0, Math.min(maxResults, 30)) // Limit to prevent API overuse
+        .map(place => {
+          // Determine category based on place types or name
+          let category: "restaurant" | "activity" | "outdoor" | "event" = "activity"
+          
+          const name = (place.displayName?.text || place.name || '').toLowerCase()
+          const types = place.types || []
+          
+          if (types.includes('restaurant') || types.includes('food') || types.includes('meal_takeaway') || 
+              name.includes('restaurant') || name.includes('cafe') || name.includes('bar') || name.includes('diner')) {
+            category = "restaurant"
+          } else if (types.includes('park') || types.includes('campground') || 
+                     name.includes('park') || name.includes('trail') || name.includes('garden') || name.includes('beach')) {
+            category = "outdoor"
+          } else if (name.includes('concert') || name.includes('theater') || name.includes('show') || 
+                     name.includes('festival') || name.includes('event')) {
+            category = "event"
+          }
+          
+          return convertGooglePlaceToResult(place, category)
+        })
+      
+      allResults.push(...searchResults)
+      console.log(`Found ${searchResults.length} places for search "${sanitizedQuery}"`)
+    } catch (error) {
+      console.error('Error searching Google Places:', error)
+    }
+    
+    // Also search Yelp for restaurant queries
+    if (sanitizedQuery.toLowerCase().includes('restaurant') || 
+        sanitizedQuery.toLowerCase().includes('food') || 
+        sanitizedQuery.toLowerCase().includes('cafe') ||
+        sanitizedQuery.toLowerCase().includes('bar')) {
+      try {
+        const { fetchYelpRestaurants } = await import("@/lib/yelp-api")
+        const yelpResults = await fetchYelpRestaurants(
+          `${sanitizedQuery} ${sanitizedCity}`, 
+          Math.min(maxResults, 20),
+          0,
+          excludeIds
+        )
+        
+        // Filter Yelp results by search query
+        const filteredYelpResults = yelpResults.filter(restaurant => 
+          restaurant.name.toLowerCase().includes(sanitizedQuery.toLowerCase())
+        )
+        
+        allResults.push(...filteredYelpResults)
+        console.log(`Found ${filteredYelpResults.length} Yelp restaurants for search "${sanitizedQuery}"`)
+      } catch (error) {
+        console.log("Yelp API not available for search")
+      }
+    }
+    
+    // Also search events APIs for event-related queries  
+    if (sanitizedQuery.toLowerCase().includes('event') || 
+        sanitizedQuery.toLowerCase().includes('concert') || 
+        sanitizedQuery.toLowerCase().includes('show') ||
+        sanitizedQuery.toLowerCase().includes('theater') ||
+        sanitizedQuery.toLowerCase().includes('festival')) {
+      try {
+        const { fetchAllEvents } = await import("@/lib/events-api")
+        const eventResults = await fetchAllEvents(
+          sanitizedCity,
+          Math.min(maxResults, 15),
+          excludeIds
+        )
+        
+        // Filter events by search query
+        const filteredEventResults = eventResults.filter(event => 
+          event.name.toLowerCase().includes(sanitizedQuery.toLowerCase())
+        )
+        
+        allResults.push(...filteredEventResults)
+        console.log(`Found ${filteredEventResults.length} events for search "${sanitizedQuery}"`)
+      } catch (error) {
+        console.log("Events API not available for search")
+      }
+    }
+    
+    // Remove duplicates based on name similarity
+    const uniqueResults = allResults.filter((result, index, self) => 
+      index === self.findIndex(other => 
+        other.name.toLowerCase() === result.name.toLowerCase() &&
+        other.address === result.address
+      )
+    )
+    
+    // Sort by relevance (exact name matches first, then by rating)
+    const sortedResults = uniqueResults.sort((a, b) => {
+      const aExactMatch = a.name.toLowerCase().includes(sanitizedQuery.toLowerCase())
+      const bExactMatch = b.name.toLowerCase().includes(sanitizedQuery.toLowerCase())
+      
+      if (aExactMatch && !bExactMatch) return -1
+      if (!aExactMatch && bExactMatch) return 1
+      
+      return (b.rating || 0) - (a.rating || 0)
+    })
+    
+    console.log(`Returning ${sortedResults.length} unique search results for "${sanitizedQuery}"`)
+    return sortedResults.slice(0, maxResults)
+    
+  } catch (error) {
+    console.error("Error in searchSpecificVenues:", error)
+    throw error
+  }
+} 

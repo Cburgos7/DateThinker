@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { searchPlacesForExplore, searchTrendingVenues, getSocialData } from '@/lib/search-utils'
+import { searchPlacesForExplore, searchTrendingVenues, getSocialData, searchSpecificVenues } from '@/lib/search-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
     const excludeIds = searchParams.get('excludeIds')?.split(',') || []
     const trending = searchParams.get('trending') === 'true'
     const social = searchParams.get('social') === 'true'
+    const search = searchParams.get('search') // New search parameter
 
     if (!city) {
       return NextResponse.json({ error: 'City parameter is required' }, { status: 400 })
@@ -83,6 +84,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ 
         venues: trendingVenues, 
         hasMore: false, // Trending results are limited
+        page: 1,
+        totalPages: 1
+      })
+    }
+
+    // If search query is provided, search for specific venues
+    if (search && search.trim()) {
+      const searchResults = await searchSpecificVenues({
+        city,
+        searchQuery: search.trim(),
+        maxResults: limit,
+        excludeIds
+      })
+      
+      return NextResponse.json({ 
+        venues: searchResults, 
+        hasMore: false, // Search results don't paginate 
         page: 1,
         totalPages: 1
       })

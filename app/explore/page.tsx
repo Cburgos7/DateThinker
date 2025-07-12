@@ -29,6 +29,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { Badge } from "@/components/ui/badge"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
+import { VenueDetailsModal } from "@/components/venue-details-modal"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import { type PlaceResult } from "@/lib/search-utils"
@@ -41,10 +42,13 @@ interface Venue {
   rating?: number
   priceLevel?: number
   image?: string
+  photos?: string[]
   description?: string
   category: 'restaurant' | 'activity' | 'outdoor' | 'event'
   address?: string
   location?: string
+  phone?: string
+  website?: string
   openNow?: boolean
   isFavorite?: boolean
   trending?: boolean
@@ -98,6 +102,8 @@ export default function ExplorePage() {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const loadMoreRef = useRef<HTMLDivElement>(null)
+  const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null)
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
   
   // Get user's location
   const requestLocation = async () => {
@@ -237,13 +243,11 @@ export default function ExplorePage() {
     }
   }, [userLocation, locationPermission]) // Only load when we have a real location
 
-  // Filter venues based on search and category
+  // Filter venues based on category (search now triggers API calls)
   const filteredVenues = useMemo(() => venues.filter(venue => {
-    const matchesSearch = venue.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         venue.description?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesCategory = selectedCategory === 'all' || venue.category === selectedCategory
-    return matchesSearch && matchesCategory
-  }), [venues, searchQuery, selectedCategory])
+    return matchesCategory
+  }), [venues, selectedCategory])
 
   const handlePlanDate = (venue: Venue) => {
     // Navigate to make-date page with pre-selected venue
@@ -264,6 +268,50 @@ export default function ExplorePage() {
       // Reset city input
       setCity('')
     }
+  }
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || !userLocation) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Search for specific venues by name
+      const response = await fetch(`/api/explore?city=${encodeURIComponent(userLocation)}&search=${encodeURIComponent(searchQuery)}&limit=50`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to search venues')
+      }
+      
+      const data = await response.json()
+      setVenues(data.venues)
+      setHasMore(data.hasMore)
+      setPage(1)
+    } catch (error) {
+      console.error('Error searching venues:', error)
+      setError('Failed to search venues. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const clearSearch = () => {
+    setSearchQuery('')
+    // Reload original venues for the location
+    if (userLocation && locationPermission === 'granted') {
+      fetchVenues(userLocation, 1, false, [])
+    }
+  }
+
+  const openVenueDetails = (venue: Venue) => {
+    setSelectedVenue(venue)
+    setIsDetailsModalOpen(true)
+  }
+
+  const closeVenueDetails = () => {
+    setIsDetailsModalOpen(false)
+    setSelectedVenue(null)
   }
 
   const toggleFavorite = async (venueId: string) => {
@@ -401,12 +449,9 @@ export default function ExplorePage() {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => {
-              // TODO: Open venue details modal
-              toast({
-                title: "Coming soon",
-                description: "Venue details will be available soon.",
-              })
+            onClick={(e) => {
+              e.stopPropagation()
+              openVenueDetails(venue)
             }}
           >
             Details
@@ -571,15 +616,20 @@ export default function ExplorePage() {
             {/* Social Activity Summary */}
             {socialData && (
               <div className="mb-8">
-                <div className="flex items-center space-x-4 text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
-                  <div className="flex items-center space-x-1">
-                    <Users className="w-4 h-4" />
-                    <span>{socialData.totalUsersExploring} people exploring nearby</span>
+                <div className="flex items-center justify-between space-x-4 text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-1">
+                      <Users className="w-4 h-4" />
+                      <span>{socialData.totalUsersExploring} people exploring nearby</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Eye className="w-4 h-4" />
+                      <span>{socialData.totalVenuesViewed} venues viewed today</span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Eye className="w-4 h-4" />
-                    <span>{socialData.totalVenuesViewed} venues viewed today</span>
-                  </div>
+                  <Badge variant="outline" className="text-xs text-gray-500">
+                    Demo Data
+                  </Badge>
                 </div>
               </div>
             )}
@@ -640,14 +690,28 @@ export default function ExplorePage() {
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <div className="flex flex-col space-y-4">
                 {/* Search Bar */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <Input
-                    placeholder="Search places..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
+                <div className="flex space-x-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                    <Input
+                      placeholder="Search for specific places (e.g., 'Minnesota Children's Museum')..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                    />
+                  </div>
+                  {searchQuery.trim() && (
+                    <>
+                      <Button onClick={handleSearch} disabled={loading}>
+                        <Search className="h-4 w-4 mr-1" />
+                        Search
+                      </Button>
+                      <Button variant="outline" onClick={clearSearch}>
+                        Clear
+                      </Button>
+                    </>
+                  )}
                 </div>
                 
                 {/* City Input */}
@@ -723,8 +787,10 @@ export default function ExplorePage() {
                     </Button>
                   </div>
                   <span className="text-sm text-gray-500">
-                    {filteredVenues.length} places found
-                    {hasMore && ` • More available`}
+                    {searchQuery.trim() ? 
+                      `${filteredVenues.length} search results for "${searchQuery}"` : 
+                      `${filteredVenues.length} places found${hasMore ? ' • More available' : ''}`
+                    }
                   </span>
                 </div>
               </div>
@@ -781,6 +847,23 @@ export default function ExplorePage() {
         </div>
       </main>
       <Footer />
+      
+      {/* Venue Details Modal */}
+      <VenueDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={closeVenueDetails}
+        venue={selectedVenue}
+        onPlanDate={(venue) => {
+          const params = new URLSearchParams({
+            city: userLocation,
+            preselected: venue.id,
+            name: venue.name,
+            category: venue.category
+          })
+          router.push(`/make-date?${params.toString()}`)
+        }}
+        onToggleFavorite={toggleFavorite}
+      />
     </>
   )
 } 

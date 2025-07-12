@@ -175,17 +175,23 @@ export async function fetchTicketmasterEvents(
 
     const sanitizedCity = sanitizeInput(city)
     
+    // Get current date in ISO format for filtering future events
+    const now = new Date()
+    const startDateTime = now.toISOString()
+    
     // Ticketmaster Discovery API endpoint
     const url = new URL('https://app.ticketmaster.com/discovery/v2/events.json')
     url.searchParams.append('city', sanitizedCity)
     url.searchParams.append('size', limit.toString())
-    url.searchParams.append('sort', 'relevance,desc')
+    url.searchParams.append('sort', 'date,asc') // Sort by date, ascending (earliest first)
     url.searchParams.append('apikey', apiKey)
+    url.searchParams.append('startDateTime', startDateTime) // Only future events
     
     // Filter for entertainment categories
     url.searchParams.append('classificationName', 'Music,Arts & Theatre,Film,Sports')
 
-    console.log(`Fetching events from Ticketmaster for ${sanitizedCity}`)
+    console.log(`Fetching future events from Ticketmaster for ${sanitizedCity}`)
+    console.log(`Start date filter: ${startDateTime}`)
 
     const response = await fetch(url.toString(), {
       cache: 'no-store'
@@ -199,16 +205,17 @@ export async function fetchTicketmasterEvents(
     const data = await response.json()
     
     if (!data._embedded?.events || data._embedded.events.length === 0) {
-      console.log(`No Ticketmaster events found for ${sanitizedCity}`)
+      console.log(`No future Ticketmaster events found for ${sanitizedCity}`)
       return []
     }
 
-    console.log(`Found ${data._embedded.events.length} Ticketmaster events for ${sanitizedCity}`)
+    console.log(`Found ${data._embedded.events.length} future Ticketmaster events for ${sanitizedCity}`)
 
     // Convert Ticketmaster events to our PlaceResult format
     const events: PlaceResult[] = data._embedded.events
       .filter((event: TicketmasterEvent) => !excludeIds.includes(event.id))
       .map((event: TicketmasterEvent) => convertTicketmasterToPlaceResult(event))
+      .filter((event: PlaceResult) => event.openNow) // Additional client-side filter for upcoming events
 
     return events
 
