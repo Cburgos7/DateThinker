@@ -337,13 +337,15 @@ export default function MyFavoriteDatesPage() {
                     }`}
                     onClick={() => isSelectionMode ? toggleSelection(place) : handlePlaceClick(place)}
                   >
-                    {place.photo_url && (
+                    {place.photo_url ? (
                       <div className="h-48 bg-cover bg-center relative" style={{ backgroundImage: `url(${place.photo_url})` }}>
                         <div className="h-full bg-black bg-opacity-20 flex items-end">
                           <div className="p-4 text-white">
                             <div className="flex items-center space-x-2">
                               <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                              <span className="text-sm font-medium">{place.rating || 'N/A'}</span>
+                              <span className="text-sm font-medium">
+                                {place.rating ? place.rating.toFixed(1) : 'N/A'}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -358,6 +360,10 @@ export default function MyFavoriteDatesPage() {
                             </div>
                           </div>
                         )}
+                      </div>
+                    ) : (
+                      <div className="h-48 bg-gray-200 flex items-center justify-center">
+                        <span className="text-gray-500">No image available</span>
                       </div>
                     )}
                     <CardHeader className="pb-3">
@@ -396,7 +402,7 @@ export default function MyFavoriteDatesPage() {
                         )}
                       </div>
 
-                      {place.types && (
+                      {place.types && Array.isArray(place.types) && (
                         <div className="flex flex-wrap gap-1 mb-3">
                           {place.types.slice(0, 3).map((type: string) => (
                             <Badge key={type} variant="secondary" className="text-xs">
@@ -407,7 +413,7 @@ export default function MyFavoriteDatesPage() {
                       )}
                       <div className="flex items-center justify-between">
                         <div className="text-sm text-muted-foreground">
-                          Saved {new Date(place.created_at).toLocaleDateString()}
+                          Saved {place.created_at ? new Date(place.created_at).toLocaleDateString() : 'Recently'}
                         </div>
                         <div className="text-sm text-blue-600 hover:text-blue-800">
                           Click to view details
