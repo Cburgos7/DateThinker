@@ -1,1415 +1,1206 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import {
-  RefreshCcw,
-  Search,
+  Plus,
   Heart,
-  Sparkles,
+  Clock,
   MapPin,
   Star,
+  Trash2,
   Save,
-  Plus,
+  Calendar,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  Edit3,
+  X,
+  Check,
+  Users,
+  DollarSign,
+  Compass,
+  Bookmark
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Toggle } from "@/components/ui/toggle"
-import { cn } from "@/lib/utils"
-import { type PlaceResult, type SearchResults, refreshPlace } from "@/lib/search-utils"
-import { AdBanner } from "@/components/ads/ad-banner"
-import { Footer } from "@/components/footer"
-import { Header } from "@/components/header"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { getCurrentUser } from "@/lib/supabase"
-import { checkIsFavorite, toggleFavorite } from "@/app/actions/favorites"
-import { SaveDateModal } from "@/components/save-date-modal"
-import Image from "next/image"
-import { createClient } from "@/utils/supabase/client"
-import { type User } from "@supabase/supabase-js"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
 import { useAuth } from "@/contexts/auth-context"
-import { getPersonalizedRecommendations, getRandomRecommendation, type RecommendationResult } from "@/lib/recommendation-engine"
-import { getUserPreferences } from "@/app/actions/user-preferences"
-import { MultipleVenuesSection } from "@/components/multiple-venues-section"
-import { SequentialDatePlanner } from "@/components/sequential-date-planner"
-import { VENUE_TYPE_OPTIONS } from "@/lib/types"
-import { toast } from '@/hooks/use-toast'
+import { toast } from "@/hooks/use-toast"
+import { 
+  getPlanningStack, 
+  removeFromPlanningStack, 
+  updatePlanningStackItem, 
+  clearPlanningStack,
+  addToPlanningStack,
+  type PlanningStackItem 
+} from "@/app/actions/planning-stack"
+import { getFavorites } from "@/app/actions/favorites"
+import type { PlaceResult } from "@/lib/search-utils"
+import { VenueDetailsModal } from "@/components/venue-details-modal"
+import { SaveDateSetModal } from "@/components/save-date-set-modal"
 
-// Using consistent auth via useAuth hook
-
-export default function Page() {
+export default function MakeDatePage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  // Remove old supabase instance - we'll create clients as needed
-  const { user, isLoading: isLoadingUser } = useAuth()
-  const [city, setCity] = useState("")
-  const [placeId, setPlaceId] = useState<string | undefined>(undefined)
-  const [priceRange, setPriceRange] = useState(0) // 0 means no price filter
-  const [favorites, setFavorites] = useState<string[]>([])
-  const [userSubscriptionStatus, setUserSubscriptionStatus] = useState<string | null>(null)
-  const [filters, setFilters] = useState({
-    restaurants: false,
-    activities: false,
-    outdoors: false,
-    events: false,
-  })
-  const [results, setResults] = useState<SearchResults>({})
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isDateModalOpen, setIsDateModalOpen] = useState(false)
-  const [multipleVenues, setMultipleVenues] = useState<{
-    restaurants: PlaceResult[]
-    activities: PlaceResult[]
-    outdoors: PlaceResult[]
-  }>({
-    restaurants: [],
-    activities: [],
-    outdoors: []
-  })
-  const [userPreferences, setUserPreferences] = useState<any>(null)
-  const [isExploring, setIsExploring] = useState(false)
-  const [planningMode, setPlanningMode] = useState<'quick' | 'sequential'>('quick')
+  const { user } = useAuth()
+  const [planningStack, setPlanningStack] = useState<PlanningStackItem[]>([])
+  const [favorites, setFavorites] = useState<PlaceResult[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [showFavorites, setShowFavorites] = useState(false)
+  const [selectedVenue, setSelectedVenue] = useState<PlaceResult | null>(null)
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<string | null>(null)
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [showAddOptions, setShowAddOptions] = useState(false)
+  const [venueSearchQuery, setVenueSearchQuery] = useState("")
+  const [venueSearchResults, setVenueSearchResults] = useState<PlaceResult[]>([])
+  const [searchingVenues, setSearchingVenues] = useState(false)
+  const [manualEntry, setManualEntry] = useState("")
+  const [showManualEntry, setShowManualEntry] = useState(false)
 
-  const [refreshing, setRefreshing] = useState<{
-    restaurant?: boolean
-    activity?: boolean
-    drink?: boolean
-    outdoor?: boolean
-  }>({})
+  // Filter favorites based on search query
+  const filteredFavorites = favorites.filter(favorite =>
+    favorite.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    favorite.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    favorite.category.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
-  // Enhanced URL parameter handling for preselected venues from explore page
+  // Check if Google API is configured on component mount
   useEffect(() => {
-    // ✅ Remove the early return and use proper conditional logic
-    if (searchParams) {
-      const venueId = searchParams.get('venue')
-      const cityParam = searchParams.get('city')
-      const preselectedParam = searchParams.get('preselected')
-      const mode = searchParams.get('mode') // 'single' or 'comprehensive'
-      const source = searchParams.get('source') // 'explore'
-      
-      console.log('Make-date page URL params:', { venueId, cityParam, preselectedParam, mode, source })
-      
-      // Set city from URL
-      if (cityParam) {
-        setCity(decodeURIComponent(cityParam))
-      }
-      
-      // Handle preselected venues (NEW - this was missing!)
-      if (preselectedParam) {
-        try {
-          const preselectedVenues: PlaceResult[] = JSON.parse(decodeURIComponent(preselectedParam))
-          console.log('Preselected venues received:', preselectedVenues)
-          
-          if (mode === 'comprehensive' && preselectedVenues.length > 1) {
-            // Handle multiple venues from comprehensive planning
-            console.log('Setting up comprehensive date planning with', preselectedVenues.length, 'venues')
-            
-            // Initialize multiple venues section with the preselected venues
-            const venuesByCategory = preselectedVenues.reduce((acc, venue) => {
-              if (!acc[venue.category]) {
-                acc[venue.category] = []
-              }
-              acc[venue.category].push(venue)
-              return acc
-            }, {} as Record<string, PlaceResult[]>)
-            
-            // Set multiple venues mode and populate with preselected data
-            setMultipleVenues(venuesByCategory)
-            setIsExploring(true) // Enable multiple venues view
-            
-            // Show success message
-            console.log('Comprehensive date set loaded with venues:', venuesByCategory)
-            
-            toast({
-              title: "Date set loaded!",
-              description: `${preselectedVenues.length} venues imported from explore page.`
-            })
-            
-          } else if (preselectedVenues.length === 1) {
-            // Handle single venue planning
-            const venue = preselectedVenues[0]
-            console.log('Setting up single venue planning with:', venue.name)
-            
-            // Pre-populate results with the selected venue  
-            const mockResults: SearchResults = {
-              restaurant: venue.category === 'restaurant' ? venue : undefined,
-              activity: venue.category === 'activity' ? venue : undefined, 
-              outdoor: venue.category === 'outdoor' ? venue : undefined,
-              event: venue.category === 'event' ? venue : undefined
-            }
-            
-            setResults(mockResults)
-            // setHasSearched(true) // This state doesn't exist, so we'll just log
-            
-            // Show success message
-            console.log('Single venue loaded:', venue.name)
-            
-            toast({
-              title: "Venue loaded!",
-              description: `Starting your date plan with ${venue.name}.`
-            })
-          }
-          
-          // Clear URL params after processing to avoid re-processing
-          const newUrl = new URL(window.location.href)
-          newUrl.searchParams.delete('preselected')
-          newUrl.searchParams.delete('mode')
-          newUrl.searchParams.delete('source')
-          window.history.replaceState({}, '', newUrl.toString())
-          
-        } catch (error) {
-          console.error('Error parsing preselected venues:', error)
-          // Fallback: just set the city if venue parsing fails
-        }
-      }
-      
-      // Legacy support for old venue parameter
-      else if (venueId) {
-        console.log('Legacy venue parameter detected:', venueId)
-        // Could implement legacy venue fetching here if needed
-      }
-    }
-    
-  }, [searchParams])
-
-  // Fetch user subscription status when user changes
-  useEffect(() => {
-    async function fetchSubscriptionStatus() {
-      console.log("🔄 Starting subscription status fetch...")
-      console.log("🔍 Auth context user:", user?.email, user?.id)
-      
-      // Always use server-side API to bypass cookie parsing issues
-      console.log("🌐 Using server-side API to bypass cookie parsing issues...")
-      if (user?.id) {
-        console.log("✅ User detected in auth context:", user.email)
-        console.log("🔍 User ID:", user.id)
-      } else {
-        console.log("❌ No user in auth context, but trying server-side anyway...")
-      }
-      
-      // Use server-side API to bypass corrupted cookie parsing
+    const checkGoogleAPI = async () => {
       try {
-        const response = await fetch('/api/auth/subscription-status', {
-          method: 'GET',
-          credentials: 'include' // Include cookies
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log("🌐 Server-side subscription result:", data)
-          
-          if (data.authenticated && data.subscription_status) {
-            setUserSubscriptionStatus(data.subscription_status)
-            console.log("✅ Server-side subscription status set:", data.subscription_status)
-          } else {
-            console.log("❌ Server-side: Not authenticated or no subscription")
-            setUserSubscriptionStatus("free")
-          }
-        } else {
-          console.log("❌ Server-side API failed:", response.status)
-          setUserSubscriptionStatus(null)
-        }
-      } catch (serverError) {
-        console.error("❌ Server-side API error:", serverError)
-        setUserSubscriptionStatus(null)
-      }
-    }
-
-    fetchSubscriptionStatus()
-  }, [user])
-
-  // Load user preferences when user changes
-  useEffect(() => {
-    async function loadUserPreferences() {
-      if (user?.id) {
-        try {
-          const preferences = await getUserPreferences(user.id)
-          setUserPreferences(preferences)
-        } catch (error) {
-          console.error("Error loading user preferences:", error)
-        }
-      }
-    }
-
-    loadUserPreferences()
-  }, [user])
-
-  // Time-based theming
-  useEffect(() => {
-    const hour = new Date().getHours()
-    const root = document.documentElement
-    if (hour >= 18 || hour < 6) {
-      root.style.setProperty("--gradient-start", "rgb(255, 245, 250)")
-      root.style.setProperty("--gradient-end", "rgb(255, 240, 245)")
-    } else {
-      root.style.setProperty("--gradient-start", "rgb(255, 250, 255)")
-      root.style.setProperty("--gradient-end", "rgb(255, 245, 250)")
-    }
-  }, [])
-
-  // Check if Places are in favorites using server-side API
-  useEffect(() => {
-    async function checkFavorites() {
-      if (!user || !results) return
-
-      try {
-        // Get all place IDs from results
-        const placeIds: string[] = []
-        Object.values(results).forEach(place => {
-          if (place) {
-            placeIds.push(place.id)
-          }
-        })
-        
-        if (placeIds.length === 0) return
-        
-        console.log("🔍 Checking favorites for places:", placeIds)
-        
-        const response = await fetch('/api/favorites/check', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ placeIds }),
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          console.log("✅ Favorites check result:", data.favorites)
-          setFavorites(data.favorites || [])
-        } else {
-          console.error("❌ Failed to check favorites:", response.status)
-          setFavorites([])
+        const response = await fetch('/api/google-api-status')
+        const data = await response.json()
+        console.log("🔧 Google API status:", data.status)
+        if (data.status !== "configured") {
+          console.warn("⚠️ Google API key not configured - search will fall back to custom venues")
         }
       } catch (error) {
-        console.error("❌ Error checking favorites:", error)
-        setFavorites([])
+        console.error("🔧 Error checking Google API status:", error)
       }
     }
+    checkGoogleAPI()
+  }, [])
 
+  useEffect(() => {
     if (user) {
-      checkFavorites()
+      loadData()
     }
-  }, [results, user])
+  }, [user])
 
-  const handleCityChange = (value: string, newPlaceId?: string) => {
-    setCity(value)
-    if (newPlaceId) {
-      setPlaceId(newPlaceId)
-    }
-    // Clear error when user starts typing
-    if (error) setError(null)
-  }
-
-  const handleSearch = async (e?: React.FormEvent, searchFilters = filters) => {
-    if (e) {
-      e.preventDefault()
-    }
-
-    // Check if city is entered
-    if (!city.trim()) {
-      setError("Please enter a city")
-      return
-    }
-
-    setIsLoading(true)
-    setError(null)
-
+  const loadData = async () => {
     try {
-      console.log("Searching with filters:", searchFilters)
-
-      // Try the App Router API route first
-      let response = await fetch("/api/search", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          city,
-          filters: searchFilters,
-        }),
-      })
-
-      // If the App Router API route fails, try the legacy API route
-      if (!response.ok) {
-        console.log("App Router API route failed, trying legacy API route")
-        response = await fetch("/api/search-legacy", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            city,
-            filters: searchFilters,
-          }),
-        })
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      console.log("Search response:", data)
-
-      if (!data || Object.keys(data).length === 0) {
-        throw new Error("No results found")
-      }
-
-      // Count how many filters are selected
-      const selectedFilters = Object.values(searchFilters).filter(Boolean).length
-      const isMultipleMode = selectedFilters > 1
-
-      if (isMultipleMode) {
-        // Start directly in multiple venue mode
-        console.log("🔄 Starting in multiple venue mode (multiple filters selected)")
-        
-        // Clear single results and populate multiple venues
-        setResults({})
-        setMultipleVenues({
-          restaurants: data.restaurant ? [data.restaurant] : [],
-          activities: data.activity ? [data.activity] : [],
-          outdoors: data.outdoor ? [data.outdoor] : []
-        })
-      } else {
-        // Single filter mode - show single results as before
-        console.log("🔄 Starting in single venue mode (one filter selected)")
-        setResults(data)
-        // Clear multiple venues to avoid confusion
-        setMultipleVenues({
-          restaurants: [],
-          activities: [],
-          outdoors: []
-        })
-      }
-      
-      setError(null)
-
-      // Trigger confetti if we have results
-      import('canvas-confetti').then((confettiModule) => {
-        const confetti = confettiModule.default;
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      });
+      setLoading(true)
+      const [stackData, favoritesData] = await Promise.all([
+        getPlanningStack(),
+        getFavorites()
+      ])
+      setPlanningStack(stackData)
+      setFavorites(favoritesData)
     } catch (error) {
-      console.error("Search error:", error)
-      setError(error instanceof Error ? error.message : "Failed to search places")
-      setResults({})
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Update the handleRefresh function to handle errors better
-  const handleRefresh = async (type: "restaurant" | "activity" | "drink" | "outdoor") => {
-    setRefreshing((prev) => ({ ...prev, [type]: true }))
-    setError(null)
-
-    try {
-      if (results[type]) {
-        // Try the App Router API route first
-        let response = await fetch("/api/refresh", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            type: results[type]!.category,
-            city,
-            placeId: results[type]!.placeId,
-          }),
-        })
-
-        // If the App Router API route fails, try the legacy API route
-        if (!response.ok) {
-          console.log("App Router API route failed, trying legacy API route")
-          response = await fetch("/api/refresh-legacy", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: results[type]!.category,
-              city,
-              placeId: results[type]!.placeId,
-            }),
-          })
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: "Failed to parse error response" }))
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-        }
-
-        const refreshedPlace = await response.json()
-        setResults((prevResults) => ({ ...prevResults, [type]: refreshedPlace }))
-      }
-    } catch (error: any) {
-      console.error(`Failed to refresh ${type}:`, error)
-      setError(`Couldn't find another ${type}. Try a different city or filter.`)
-    } finally {
-      setRefreshing((prev) => ({ ...prev, [type]: false }))
-    }
-  }
-
-  const handleSurpriseMe = () => {
-    // Check if city is entered
-    if (!city.trim()) {
-      setError("Please enter a city first")
-      return
-    }
-
-    // Clear any previous errors
-    setError(null)
-
-    // Set random filters
-    const randomFilters = {
-      restaurants: Math.random() > 0.3, // 70% chance of including restaurants
-      activities: Math.random() > 0.5, // 50% chance of including activities
-      outdoors: Math.random() > 0.5, // 50% chance of outdoor options
-      events: Math.random() > 0.5, // 50% chance of including events
-    }
-
-    // Ensure at least one filter is selected
-    if (!randomFilters.restaurants && !randomFilters.activities && !randomFilters.outdoors && !randomFilters.events) {
-      randomFilters.restaurants = true
-    }
-
-    console.log("Surprise Me filters:", randomFilters)
-
-    // Update the UI filters to show what we're searching for
-    setFilters(randomFilters)
-    
-    // Directly pass the random filters to the search function
-    // instead of updating state and then searching
-    handleSearch(undefined, randomFilters)
-  }
-
-  const handleExploreRecommendations = async () => {
-    if (!user?.id || !city.trim()) {
-      setError(!user?.id ? "Please sign in to get personalized recommendations" : "Please enter a city")
-      return
-    }
-
-    setIsExploring(true)
-    setError(null)
-
-    try {
-      const recommendations = await getPersonalizedRecommendations({
-        city: city.trim(),
-        placeId,
-        userId: user.id,
-        maxResults: 3
+      console.error("Error loading data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load your planning data.",
+        variant: "destructive",
       })
+    } finally {
+      setLoading(false)
+    }
+  }
 
-      // Count how many categories have results
-      const categoriesWithResults = [
-        recommendations.restaurants.length > 0,
-        recommendations.activities.length > 0,
-        recommendations.outdoors.length > 0
-      ].filter(Boolean).length
-
-      const isMultipleMode = categoriesWithResults > 1
-
-      if (isMultipleMode) {
-        // Start directly in multiple venue mode
-        console.log("🔄 Explore recommendations starting in multiple venue mode")
-        setResults({})
-        setMultipleVenues(recommendations)
-      } else {
-        // Single category mode - show single results
-        console.log("🔄 Explore recommendations starting in single venue mode")
-        const newResults: SearchResults = {}
-        
-        if (recommendations.restaurants.length > 0) {
-          newResults.restaurant = recommendations.restaurants[0]
-          setMultipleVenues(prev => ({ ...prev, restaurants: recommendations.restaurants }))
-        }
-        if (recommendations.activities.length > 0) {
-          newResults.activity = recommendations.activities[0]
-          setMultipleVenues(prev => ({ ...prev, activities: recommendations.activities }))
-        }
-        if (recommendations.outdoors.length > 0) {
-          newResults.outdoor = recommendations.outdoors[0]
-          setMultipleVenues(prev => ({ ...prev, outdoors: recommendations.outdoors }))
-        }
-
-        setResults(newResults)
-        setMultipleVenues({
-          restaurants: [],
-          activities: [],
-          outdoors: []
-        })
-      }
-
-      // Update filters based on what was found
-      setFilters({
-        restaurants: recommendations.restaurants.length > 0,
-        activities: recommendations.activities.length > 0,
-        outdoors: recommendations.outdoors.length > 0,
-        events: false,
+  const handleRemoveFromStack = async (itemId: string) => {
+    try {
+      await removeFromPlanningStack(itemId)
+      setPlanningStack(prev => prev.filter(item => item.id !== itemId))
+      toast({
+        title: "Removed from stack",
+        description: "Venue removed from your planning stack.",
       })
-
     } catch (error) {
-      console.error("Error getting recommendations:", error)
-      setError("Failed to get recommendations. Please try again.")
-    } finally {
-      setIsExploring(false)
+      console.error("Error removing from stack:", error)
+      toast({
+        title: "Error",
+        description: "Failed to remove venue from stack.",
+        variant: "destructive",
+      })
     }
   }
 
-  const handleRandomizeCategory = async (category: 'restaurant' | 'activity' | 'drink' | 'outdoor') => {
-    if (!user?.id || !city.trim()) {
-      setError(!user?.id ? "Please sign in to get random suggestions" : "Please enter a city")
-      return
-    }
-
-    setRefreshing(prev => ({ ...prev, [category]: true }))
-
+  const handleUpdateItem = async (itemId: string, updates: Partial<PlanningStackItem>) => {
     try {
-      const currentIds = Object.values(results)
-        .filter(Boolean)
-        .map(place => place!.id)
-
-      const randomPlace = await getRandomRecommendation({
-        city: city.trim(),
-        placeId,
-        userId: user.id,
-        category,
-        excludeIds: currentIds
+      await updatePlanningStackItem(itemId, updates)
+      setPlanningStack(prev => prev.map(item => 
+        item.id === itemId ? { ...item, ...updates } : item
+      ))
+      setEditingItem(null)
+      toast({
+        title: "Updated",
+        description: "Venue details updated successfully.",
       })
-
-      if (randomPlace) {
-        setResults(prev => ({
-          ...prev,
-          [category]: randomPlace
-        }))
-
-        // Update the filters to show this category
-        setFilters(prev => ({
-          ...prev,
-          [`${category}s`]: true
-        }))
-      } else {
-        setError(`No ${category} suggestions found. Try a different city or search criteria.`)
-      }
     } catch (error) {
-      console.error(`Error getting random ${category}:`, error)
-      setError(`Failed to get random ${category}. Please try again.`)
-    } finally {
-      setRefreshing(prev => ({ ...prev, [category]: false }))
+      console.error("Error updating item:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update venue details.",
+        variant: "destructive",
+      })
     }
   }
 
-  const handleToggleFavorite = async (place: PlaceResult) => {
-    console.log("❤️ Toggling favorite for:", place.name, "| User:", user?.email, "| Subscription:", userSubscriptionStatus)
-    
-    // If user is not logged in, redirect to login page
-    if (!user) {
-      console.log("❌ No user, redirecting to login")
-      router.push("/login?redirect=/")
-      return
-    }
-
-    // Toggle favorite using server-side API to bypass RLS issues
+  const handleMoveItem = async (itemId: string, direction: 'up' | 'down') => {
     try {
-      console.log("❤️ Toggling favorite via API:", place.name)
-      
-      const response = await fetch('/api/favorites/toggle', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ place }),
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error("❌ API Error:", errorData)
-        throw new Error(errorData.error || 'Failed to toggle favorite')
-      }
-      
-      const result = await response.json()
-      console.log("✅ API Success:", result)
-      
-      // Update local state based on API response
-      if (result.isFavorite) {
-        setFavorites((prev) => [...prev, place.id])
-        // Show success toast
-        import('@/components/ui/use-toast').then(({ toast }) => {
-          toast({
-            title: "Added to favorites!",
-            description: `${place.name} has been saved to your favorites`,
-          })
-        })
-      } else {
-        setFavorites((prev) => prev.filter((id) => id !== place.id))
-        // Show success toast
-        import('@/components/ui/use-toast').then(({ toast }) => {
-          toast({
-            title: "Removed from favorites",
-            description: `${place.name} has been removed from your favorites`,
-          })
-        })
-      }
+      const currentIndex = planningStack.findIndex(item => item.id === itemId)
+      if (currentIndex === -1) return
+
+      const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+      if (newIndex < 0 || newIndex >= planningStack.length) return
+
+      const newStack = [...planningStack]
+      const [movedItem] = newStack.splice(currentIndex, 1)
+      newStack.splice(newIndex, 0, movedItem)
+
+      // Update positions
+      const updatedStack = newStack.map((item, index) => ({
+        ...item,
+        position: index
+      }))
+
+      // Update all items in the database
+      await Promise.all(updatedStack.map(item => 
+        updatePlanningStackItem(item.id, { position: item.position })
+      ))
+
+      setPlanningStack(updatedStack)
     } catch (error) {
-      console.error("Error toggling favorite:", error)
-      // Show generic error toast
-      import('@/components/ui/use-toast').then(({ toast }) => {
+      console.error("Error moving item:", error)
+      toast({
+        title: "Error",
+        description: "Failed to reorder venues.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleToggleFavorite = async (venue: PlaceResult) => {
+    try {
+      // For now, just refresh favorites since we don't have the exact function signature
+      const updatedFavorites = await getFavorites()
+      setFavorites(updatedFavorites)
+      toast({
+        title: "Favorites updated",
+        description: "Your favorites have been updated.",
+      })
+    } catch (error) {
+      console.error("Error updating favorites:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update favorites.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleAddToStack = async (venue: PlaceResult) => {
+    try {
+      const result = await addToPlanningStack(venue)
+      if (result.success) {
+        // Refresh planning stack
+        const updatedStack = await getPlanningStack()
+        setPlanningStack(updatedStack)
         toast({
-          title: "Error",
-          description: "Something went wrong while saving your favorite. Please try again.",
+          title: "Added to planning stack",
+          description: `${venue.name} has been added to your planning stack.`,
+        })
+      } else {
+        toast({
+          title: "Already in stack",
+          description: result.error || "This venue is already in your planning stack.",
           variant: "destructive",
         })
-      })
-    }
-  }
-
-  const handleAddMoreVenues = (category: 'restaurants' | 'activities' | 'outdoors') => {
-    // Create an empty slot that users can fill manually or with surprise me
-    const emptySlot = {
-      id: `empty-${Date.now()}`,
-      name: '',
-      address: '',
-      rating: 0,
-      price: 0,
-      category: category.slice(0, -1) as 'restaurant' | 'activity' | 'outdoor',
-      photoUrl: '',
-      openNow: undefined,
-      isEmpty: true
-    }
-    
-    setMultipleVenues(prev => ({
-      ...prev,
-      [category]: [...prev[category], emptySlot]
-    }))
-  }
-
-  const handleRemoveVenue = (category: 'restaurants' | 'activities' | 'outdoors', venueId: string) => {
-    setMultipleVenues(prev => ({
-      ...prev,
-      [category]: prev[category].filter(venue => venue.id !== venueId)
-    }))
-  }
-
-  const handleRandomizeMultipleCategory = async (category: 'restaurants' | 'activities' | 'outdoors') => {
-    if (!userPreferences || !city) return
-
-    setIsLoading(true)
-    try {
-      const categoryMap = {
-        restaurants: 'restaurant',
-        activities: 'activity', 
-        outdoors: 'outdoor'
-      } as const
-
-      const recommendation = await getRandomRecommendation({
-        city,
-        placeId,
-        userId: user?.id || '',
-        category: categoryMap[category],
-        excludeIds: multipleVenues[category].map(v => v.id)
-      })
-
-      if (recommendation) {
-        setMultipleVenues(prev => ({
-          ...prev,
-          [category]: [...prev[category], recommendation]
-        }))
       }
     } catch (error) {
-      console.error('Error randomizing category:', error)
-    } finally {
-      setIsLoading(false)
+      console.error("Error adding to planning stack:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add venue to planning stack.",
+        variant: "destructive",
+      })
     }
   }
 
-  const handleFillEmptySlot = async (category: 'restaurants' | 'activities' | 'outdoors', venueId: string, venueName: string) => {
-    if (!city || !venueName.trim()) return
-
-    setIsLoading(true)
+  const handleClearStack = async () => {
     try {
-      // Search for the specific venue
-      const categoryFilter = {
-        restaurants: category === 'restaurants',
-        activities: category === 'activities',
-        outdoors: category === 'outdoors',
-      }
+      await clearPlanningStack()
+      setPlanningStack([])
+      toast({
+        title: "Stack cleared",
+        description: "All venues have been removed from your planning stack.",
+      })
+    } catch (error) {
+      console.error("Error clearing stack:", error)
+      toast({
+        title: "Error",
+        description: "Failed to clear planning stack.",
+        variant: "destructive",
+      })
+    }
+  }
 
-      const response = await fetch('/api/search', {
+  const openVenueDetails = (venue: PlaceResult) => {
+    setSelectedVenue(venue)
+    setIsDetailsModalOpen(true)
+  }
+
+  const closeVenueDetails = () => {
+    setSelectedVenue(null)
+    setIsDetailsModalOpen(false)
+  }
+
+  const handleSaveDateSet = async (dateSet: {
+    title: string
+    date: string
+    startTime: string
+    endTime: string
+    notes: string
+  }) => {
+    try {
+      // Convert planning stack items to the format expected by the API
+      const placesData = planningStack.map(item => ({
+        id: item.venue_id || item.id,
+        name: item.venue_name,
+        address: item.venue_address || '',
+        rating: item.venue_rating,
+        price: item.venue_price_level || 2,
+        photo_url: item.venue_photo_url,
+        types: [item.venue_category],
+        google_place_id: item.venue_id
+      }))
+
+      // Generate a unique share ID
+      const shareId = `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+      const response = await fetch('/api/date-sets/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
-          city: `${venueName} in ${city}`,
-          placeId,
-          filters: categoryFilter,
-        }),
+          title: dateSet.title,
+          date: dateSet.date || new Date().toISOString().split('T')[0], // Use today if no date provided
+          start_time: dateSet.startTime || '12:00', // Use noon if no time provided
+          end_time: dateSet.endTime || '23:59', // Use end of day if no time provided
+          places: placesData,
+          notes: dateSet.notes || null,
+          share_id: shareId
+        })
       })
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      const newVenue = data[category === 'restaurants' ? 'restaurant' : 
-                          category === 'activities' ? 'activity' : 'outdoor']
-
-      if (newVenue) {
-        setMultipleVenues(prev => ({
-          ...prev,
-          [category]: prev[category].map(venue => 
-            venue.id === venueId ? newVenue : venue
-          )
-        }))
+      if (response.ok) {
+        const result = await response.json()
+        toast({
+          title: "Date set saved!",
+          description: `"${dateSet.title}" has been saved with ${planningStack.length} places.`,
+        })
+        setShowSaveModal(false)
+        
+        // Clear the planning stack after successful save
+        await handleClearStack()
       } else {
-        // If no venue found, create a placeholder
-        const placeholderVenue = {
-          id: venueId,
-          name: venueName,
-          address: `${city}`,
-          rating: 0,
-          price: 0,
-          category: category.slice(0, -1) as 'restaurant' | 'activity' | 'outdoor',
-          photoUrl: '',
-          openNow: undefined,
-        }
-        setMultipleVenues(prev => ({
-          ...prev,
-          [category]: prev[category].map(venue => 
-            venue.id === venueId ? placeholderVenue : venue
-          )
-        }))
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to save date set')
       }
     } catch (error) {
-      console.error('Error filling empty slot:', error)
-      setError('Failed to find the specified venue. Please try again.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleRandomizeEmptySlot = async (category: 'restaurants' | 'activities' | 'outdoors', venueId: string) => {
-    if (!city) return
-
-    setIsLoading(true)
-    try {
-      const categoryFilter = {
-        restaurants: category === 'restaurants',
-        activities: category === 'activities',
-        outdoors: category === 'outdoors',
-      }
-
-      // Get existing venue IDs to exclude
-      const existingIds = multipleVenues[category].map(v => v.id).filter(id => id !== venueId)
-
-      const response = await fetch('/api/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          city,
-          placeId,
-          filters: categoryFilter,
-          excludeIds: existingIds,
-        }),
+      console.error("Error saving date set:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to save date set."
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
       })
+    }
+  }
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+  const searchVenues = async (query: string) => {
+    if (!query.trim()) {
+      setVenueSearchResults([])
+      return
+    }
 
-      const data = await response.json()
-      const newVenue = data[category === 'restaurants' ? 'restaurant' : 
-                          category === 'activities' ? 'activity' : 'outdoor']
-
-      if (newVenue) {
-        setMultipleVenues(prev => ({
-          ...prev,
-          [category]: prev[category].map(venue => 
-            venue.id === venueId ? newVenue : venue
-          )
-        }))
+    setSearchingVenues(true)
+    console.log("🔍 Starting search for:", query)
+    
+    try {
+      // Use Google Places API for specific venue searches
+      const searchUrl = `/api/places?query=${encodeURIComponent(query)}&location=${encodeURIComponent('Saint Paul, MN')}`
+      console.log("🔍 Making request to:", searchUrl)
+      
+      const response = await fetch(searchUrl)
+      console.log("🔍 Response status:", response.status)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log("🔍 API response:", data)
+        
+        if (data.status === "OK" && data.results) {
+          // Convert Google Places results to PlaceResult format
+          const convertedResults = data.results.map((place: any) => ({
+            id: place.place_id,
+            name: place.name,
+            category: getCategoryFromTypes(place.types),
+            address: place.formatted_address || '',
+            rating: place.rating,
+            price: place.price_level || 2,
+            photoUrl: place.photos?.[0]?.name ? 
+              `/api/place-photo?photoName=${place.photos[0].name}` : undefined,
+            openNow: place.opening_hours?.open_now,
+            placeId: place.place_id,
+            phone: place.formatted_phone_number,
+            website: place.website,
+            description: place.types?.join(', ') || ''
+          }))
+          console.log("🔍 Converted results:", convertedResults)
+          setVenueSearchResults(convertedResults)
+        } else if (data.status === "ZERO_RESULTS") {
+          console.log("🔍 No results found")
+          setVenueSearchResults([])
+        } else {
+          console.error("🔍 Google Places API error:", data.error_message || data.status)
+          // Fallback: create a custom venue suggestion
+          const customSuggestion: PlaceResult = {
+            id: `custom-${Date.now()}`,
+            name: query.trim(),
+            category: 'activity' as const,
+            address: '',
+            rating: undefined,
+            price: 0,
+            photoUrl: undefined,
+            openNow: undefined,
+            placeId: `custom-${Date.now()}`,
+            phone: undefined,
+            website: undefined,
+            description: `Custom venue: ${query.trim()}`
+          }
+          setVenueSearchResults([customSuggestion])
+        }
+      } else {
+        const errorText = await response.text()
+        console.error("🔍 HTTP error:", response.status, errorText)
+        // Fallback: create a custom venue suggestion
+        const customSuggestion: PlaceResult = {
+          id: `custom-${Date.now()}`,
+          name: query.trim(),
+          category: 'activity' as const,
+          address: '',
+          rating: undefined,
+          price: 0,
+          photoUrl: undefined,
+          openNow: undefined,
+          placeId: `custom-${Date.now()}`,
+          phone: undefined,
+          website: undefined,
+          description: `Custom venue: ${query.trim()}`
+        }
+        setVenueSearchResults([customSuggestion])
       }
     } catch (error) {
-      console.error('Error randomizing empty slot:', error)
+      console.error("🔍 Error searching venues:", error)
+      // Fallback: create a custom venue suggestion
+      const customSuggestion: PlaceResult = {
+        id: `custom-${Date.now()}`,
+        name: query.trim(),
+        category: 'activity' as const,
+        address: '',
+        rating: undefined,
+        price: 0,
+        photoUrl: undefined,
+        openNow: undefined,
+        placeId: `custom-${Date.now()}`,
+        phone: undefined,
+        website: undefined,
+        description: `Custom venue: ${query.trim()}`
+      }
+      setVenueSearchResults([customSuggestion])
     } finally {
-      setIsLoading(false)
+      setSearchingVenues(false)
     }
   }
 
-  const handleMoveVenuesToMultiple = () => {
-    // Move any single results to multiple venues arrays
-    const newMultipleVenues = { ...multipleVenues }
+  // Helper function to convert Google Places types to our categories
+  const getCategoryFromTypes = (types: string[]): 'restaurant' | 'activity' | 'outdoor' | 'event' => {
+    if (!types || types.length === 0) return 'activity'
     
-    if (results.restaurant && !newMultipleVenues.restaurants.find(v => v.id === results.restaurant!.id)) {
-      newMultipleVenues.restaurants = [...newMultipleVenues.restaurants, results.restaurant]
-    }
-    if (results.activity && !newMultipleVenues.activities.find(v => v.id === results.activity!.id)) {
-      newMultipleVenues.activities = [...newMultipleVenues.activities, results.activity]
-    }
-    if (results.outdoor && !newMultipleVenues.outdoors.find(v => v.id === results.outdoor!.id)) {
-      newMultipleVenues.outdoors = [...newMultipleVenues.outdoors, results.outdoor]
-    }
-
-    setMultipleVenues(newMultipleVenues)
+    const typeString = types.join(' ').toLowerCase()
     
-    // Clear single results since they're now in multiple venues
-    setResults({})
+    if (typeString.includes('restaurant') || typeString.includes('food') || typeString.includes('meal')) {
+      return 'restaurant'
+    }
+    if (typeString.includes('park') || typeString.includes('natural_feature') || typeString.includes('campground')) {
+      return 'outdoor'
+    }
+    if (typeString.includes('movie_theater') || typeString.includes('amusement_park') || typeString.includes('museum') || typeString.includes('art_gallery')) {
+      return 'activity'
+    }
+    if (typeString.includes('event') || typeString.includes('stadium') || typeString.includes('concert_hall')) {
+      return 'event'
+    }
+    
+    return 'activity'
   }
 
-  // Get all places from results as an array
-  const getPlacesArray = (): PlaceResult[] => {
-    const places: PlaceResult[] = []
+  const handleAddManualEntry = async () => {
+    if (!manualEntry.trim()) {
+      toast({
+        title: "Empty entry",
+        description: "Please enter a name for your activity.",
+        variant: "destructive",
+      })
+      return
+    }
 
-    // Include current single results
-    if (results.restaurant) places.push(results.restaurant)
-    if (results.activity) places.push(results.activity)
-    if (results.outdoor) places.push(results.outdoor)
+    try {
+      // Create a custom PlaceResult for the manual entry
+      const customVenue: PlaceResult = {
+        id: `manual-${Date.now()}`,
+        name: manualEntry.trim(),
+        category: 'activity' as const,
+        address: '',
+        rating: undefined,
+        price: 0,
+        photoUrl: undefined,
+        openNow: undefined,
+        placeId: `manual-${Date.now()}`,
+        phone: undefined,
+        website: undefined,
+        description: `Custom activity: ${manualEntry.trim()}`
+      }
 
-    // Include multiple venues if any, but filter out empty slots
-    places.push(...multipleVenues.restaurants.filter(venue => !venue.isEmpty))
-    places.push(...multipleVenues.activities.filter(venue => !venue.isEmpty))
-    places.push(...multipleVenues.outdoors.filter(venue => !venue.isEmpty))
-
-    // Remove duplicates based on place ID
-    return places.filter((place, index, array) => 
-      array.findIndex(p => p.id === place.id) === index
-    )
+      const result = await addToPlanningStack(customVenue)
+      if (result.success) {
+        // Refresh planning stack
+        const updatedStack = await getPlanningStack()
+        setPlanningStack(updatedStack)
+        setManualEntry("")
+        setShowManualEntry(false)
+        toast({
+          title: "Added to planning stack",
+          description: `${manualEntry.trim()} has been added to your planning stack.`,
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to add custom activity.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error adding manual entry:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add custom activity.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleSaveDatePlan = () => {
-    // Open the save date modal directly without authentication check
-    setIsDateModalOpen(true)
-  }
-
-  // Auth is now handled consistently via useAuth hook
-
-  // Add loading state UI
-  if (isLoadingUser) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[var(--gradient-start)] to-[var(--gradient-end)]">
+      <>
         <Header />
-        <main className="container mx-auto px-4 py-8">
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-500 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading...</p>
+        <main className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50">
+          <div className="container mx-auto px-4 py-8">
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="mt-4 text-gray-600">Loading your planning stack...</p>
+              </div>
             </div>
           </div>
         </main>
         <Footer />
-      </div>
+      </>
     )
   }
-
-  // Auth is handled by useAuth context - no need for manual error handling
 
   return (
     <>
       <Header />
+      <main className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50">
+        <div className="container mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Plan Your Date</h1>
+            <p className="text-lg text-gray-600">Organize your venues and create the perfect date experience.</p>
+          </div>
 
-      <main className="min-h-screen bg-[var(--gradient-start)] transition-colors duration-1000">
-        <div className="absolute inset-0 bg-grid-white/[0.015] bg-[size:20px_20px]" />
-        <div className="container mx-auto px-4 py-4 md:py-8 relative">
-          <div className="max-w-2xl mx-auto space-y-6 md:space-y-8">
-            <div className="text-center space-y-2 md:space-y-4">
-              <h1 className="text-4xl md:text-5xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-rose-500 to-purple-500 animate-gradient">
-                DateThinker
-              </h1>
-              <p className="text-muted-foreground text-base md:text-lg">Discover the perfect date spots in your city</p>
-              {(user || !isLoadingUser) && (
-                <div className={`text-xs px-3 py-1 rounded-full inline-block ${
-                  userSubscriptionStatus === 'premium' || userSubscriptionStatus === 'lifetime'
-                    ? 'text-purple-700 bg-purple-100'
-                    : user 
-                      ? 'text-blue-700 bg-blue-100'
-                      : 'text-red-700 bg-red-100'
-                }`}>
-                  {user ? (
-                    <>👤 {user.email} | Status: {userSubscriptionStatus || 'Loading...'} {userSubscriptionStatus === 'premium' || userSubscriptionStatus === 'lifetime' ? '💎' : '⭐️'}</>
-                  ) : (
-                    <>❌ Not logged in - Click heart to sign in</>
-                  )}
-                </div>
-              )}
-              {isLoadingUser && (
-                <div className="text-xs text-blue-500 bg-blue-50 px-3 py-1 rounded-full inline-block">
-                  🔄 Loading authentication...
-                </div>
-              )}
+          {/* Planning Stack Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <Calendar className="h-6 w-6 text-blue-600" />
+              <h2 className="text-2xl font-semibold text-gray-900">
+                Planning Stack ({planningStack.length} items)
+              </h2>
             </div>
-
-            <form onSubmit={handleSearch} className="space-y-6 md:space-y-8">
-              <div className="relative group">
-                <Input
-                  type="text"
-                  value={city}
-                  onChange={(e) => handleCityChange(e.target.value)}
-                  placeholder="Enter your city..."
-                  className="pl-10 h-12 text-lg transition-all border-2 group-hover:border-rose-300"
-                  required
-                />
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              </div>
-
-              <div className="flex flex-wrap gap-3 md:gap-4 justify-center">
-                <Toggle
-                  pressed={filters.restaurants}
-                  onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, restaurants: pressed }))}
-                  className="data-[state=on]:bg-rose-200 data-[state=on]:text-rose-800"
-                >
-                  <span className="text-sm mr-2">🍽️</span>
-                  Restaurants
-                </Toggle>
-                <Toggle
-                  pressed={filters.activities}
-                  onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, activities: pressed }))}
-                  className="data-[state=on]:bg-purple-200 data-[state=on]:text-purple-800"
-                >
-                  <span className="text-sm mr-2">🎯</span>
-                  Activities
-                </Toggle>
-                <Toggle
-                  pressed={filters.outdoors}
-                  onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, outdoors: pressed }))}
-                  className="data-[state=on]:bg-emerald-200 data-[state=on]:text-emerald-800"
-                >
-                  <span className="text-sm mr-2">🌳</span>
-                  Outdoors
-                </Toggle>
-                <Toggle
-                  pressed={filters.events}
-                  onPressedChange={(pressed) => setFilters((prev) => ({ ...prev, events: pressed }))}
-                  className="data-[state=on]:bg-yellow-200 data-[state=on]:text-yellow-800"
-                >
-                  <span className="text-sm mr-2">🎭</span>
-                  Events
-                </Toggle>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <div className="flex gap-4">
-                  <Button
-                    type="submit"
-                    className="flex-1 h-12 text-lg bg-gradient-to-r from-rose-500 to-purple-500 hover:opacity-90"
-                    disabled={isLoading || isExploring}
-                  >
-                    {isLoading ? <div className="animate-pulse">Finding perfect spots...</div> : "Find Date Ideas"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleSurpriseMe}
-                    className="group"
-                    disabled={isLoading || isExploring}
-                  >
-                    <Sparkles className="h-5 w-5 mr-2 group-hover:animate-spin" />
-                    Surprise Me
-                  </Button>
-                </div>
-                
-                {user && userPreferences && (
-                  <Button
-                    type="button"
-                    onClick={handleExploreRecommendations}
-                    className="h-12 text-lg bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
-                    disabled={isLoading || isExploring}
-                  >
-                    {isExploring ? (
-                      <div className="flex items-center">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Getting personalized recommendations...
-                      </div>
-                    ) : (
-                      <>
-                        <Heart className="h-5 w-5 mr-2" />
-                        🔍 Explore Based on Your Preferences
-                      </>
-                    )}
-                  </Button>
-                )}
-                
-                {user && !userPreferences && (
-                  <div className="text-center text-sm text-muted-foreground p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                    💡 Set up your preferences in <a href="/settings" className="text-blue-600 hover:underline">Settings</a> to get personalized recommendations!
-                  </div>
-                )}
-              </div>
-
-              {error && <div className="text-center text-red-500 animate-appear">{error}</div>}
-            </form>
-
-            {/* Planning Mode Selector */}
-            <div className="flex justify-center">
-              <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-                <button
-                  onClick={() => setPlanningMode('quick')}
-                  className={cn(
-                    "px-4 py-2 text-sm font-medium rounded-md transition-all",
-                    planningMode === 'quick'
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  )}
-                >
-                  Quick Search
-                </button>
-                <button
-                  onClick={() => setPlanningMode('sequential')}
-                  className={cn(
-                    "px-4 py-2 text-sm font-medium rounded-md transition-all",
-                    planningMode === 'sequential'
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-600 hover:text-gray-900"
-                  )}
-                >
-                  Sequential Planner
-                </button>
-              </div>
-            </div>
-
-            {/* Multiple Venue Mode Indicator */}
-            {(multipleVenues.restaurants.length > 0 || 
-              multipleVenues.activities.length > 0 || 
-              multipleVenues.outdoors.length > 0) && (
-              <div className="text-center my-4">
-                <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-100 to-blue-100 rounded-full">
-                  <Sparkles className="h-4 w-4 mr-2 text-purple-600" />
-                  <span className="text-sm font-medium text-purple-700">
-                    Multiple Venues Mode - Building your perfect date plan
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Conditional Content Based on Planning Mode */}
-            {planningMode === 'sequential' ? (
-              <SequentialDatePlanner
-                city={city}
-                placeId={placeId}
-                onSave={(plan) => {
-                  console.log('Sequential plan saved:', plan)
-                  // Handle saving the sequential plan
-                }}
-              />
-            ) : (
-              <>
-                {/* Stand-alone Save Date Plan button */}
-                <div className="flex justify-center">
-                  <Button
-                    onClick={handleSaveDatePlan}
-                    className="bg-gradient-to-r from-purple-500 to-blue-500 hover:opacity-90"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Date Plan
-                  </Button>
-                </div>
-
-            {Object.keys(results).length > 0 && (
-              <>
-                <div className="grid gap-4 md:gap-6">
-                  {results.restaurant && (
-                    <ResultCard
-                      title="Restaurant"
-                      result={results.restaurant}
-                      onFavorite={() => handleToggleFavorite(results.restaurant!)}
-                      isFavorite={favorites.includes(results.restaurant.id)}
-                      onRefresh={() => handleRefresh("restaurant")}
-                      onRandomize={() => handleRandomizeCategory("restaurant")}
-                      isRefreshing={refreshing.restaurant}
-                      isLoggedIn={!!user}
-                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    />
-                  )}
-
-                  {results.activity && (
-                    <ResultCard
-                      title="Activity"
-                      result={results.activity}
-                      onFavorite={() => handleToggleFavorite(results.activity!)}
-                      isFavorite={favorites.includes(results.activity.id)}
-                      onRefresh={() => handleRefresh("activity")}
-                      onRandomize={() => handleRandomizeCategory("activity")}
-                      isRefreshing={refreshing.activity}
-                      isLoggedIn={!!user}
-                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    />
-                  )}
-                  {results.outdoor && (
-                    <ResultCard
-                      title="Outdoor Activity"
-                      result={results.outdoor}
-                      onFavorite={() => handleToggleFavorite(results.outdoor!)}
-                      isFavorite={favorites.includes(results.outdoor.id)}
-                      onRefresh={() => handleRefresh("outdoor")}
-                      onRandomize={() => handleRandomizeCategory("outdoor")}
-                      isRefreshing={refreshing.outdoor}
-                      isLoggedIn={!!user}
-                      isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    />
-                  )}
-                </div>
-
-                {/* Add transition to multiple venues - only show if not already in multiple mode */}
-                {(results.restaurant || results.activity || results.outdoor) && 
-                 (multipleVenues.restaurants.length === 0 && 
-                  multipleVenues.activities.length === 0 && 
-                  multipleVenues.outdoors.length === 0) && (
-                  <div className="text-center my-6">
-                    <Button
-                      onClick={handleMoveVenuesToMultiple}
-                      className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:opacity-90"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Convert to Multiple Venues Mode
-                    </Button>
-                  </div>
-                )}
-
-              </>
-            )}
-
-            {/* Multiple Venues Sections */}
-            {(multipleVenues.restaurants.length > 0 || 
-              multipleVenues.activities.length > 0 || 
-              multipleVenues.outdoors.length > 0) && (
-              <div className="space-y-6">
-
-                {multipleVenues.restaurants.length > 0 && (
-                  <MultipleVenuesSection
-                    title="Restaurants"
-                    category="restaurants"
-                    venues={multipleVenues.restaurants}
-                    onAddMore={() => handleAddMoreVenues('restaurants')}
-                    onRemove={(venueId) => handleRemoveVenue('restaurants', venueId)}
-                    onRandomize={() => handleRandomizeMultipleCategory('restaurants')}
-                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('restaurants', venueId, venueName)}
-                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('restaurants', venueId)}
-                    isLoading={isLoading}
-                    isLoggedIn={!!user}
-                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<span className="text-sm text-rose-500">🍽️</span>}
-                    categoryColor="bg-rose-500 hover:bg-rose-600"
-                  />
-                )}
-
-                {multipleVenues.activities.length > 0 && (
-                  <MultipleVenuesSection
-                    title="Activities"
-                    category="activities"
-                    venues={multipleVenues.activities}
-                    onAddMore={() => handleAddMoreVenues('activities')}
-                    onRemove={(venueId) => handleRemoveVenue('activities', venueId)}
-                    onRandomize={() => handleRandomizeMultipleCategory('activities')}
-                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('activities', venueId, venueName)}
-                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('activities', venueId)}
-                    isLoading={isLoading}
-                    isLoggedIn={!!user}
-                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<span className="text-sm text-purple-500">🎯</span>}
-                    categoryColor="bg-purple-500 hover:bg-purple-600"
-                  />
-                )}
-
-                {multipleVenues.outdoors.length > 0 && (
-                  <MultipleVenuesSection
-                    title="Outdoor Activities"
-                    category="outdoors"
-                    venues={multipleVenues.outdoors}
-                    onAddMore={() => handleAddMoreVenues('outdoors')}
-                    onRemove={(venueId) => handleRemoveVenue('outdoors', venueId)}
-                    onRandomize={() => handleRandomizeMultipleCategory('outdoors')}
-                    onFillEmptySlot={(venueId, venueName) => handleFillEmptySlot('outdoors', venueId, venueName)}
-                    onRandomizeEmptySlot={(venueId) => handleRandomizeEmptySlot('outdoors', venueId)}
-                    isLoading={isLoading}
-                    isLoggedIn={!!user}
-                    isPremium={userSubscriptionStatus === "premium" || userSubscriptionStatus === "lifetime"}
-                    categoryIcon={<span className="text-sm text-emerald-500">🌳</span>}
-                    categoryColor="bg-emerald-500 hover:bg-emerald-600"
-                  />
-                )}
-
-              </div>
-            )}
-              </>
+            {planningStack.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={handleClearStack}
+                className="flex items-center space-x-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Clear All</span>
+              </Button>
             )}
           </div>
-        </div>
-        
-        {/* Ad banner at the bottom of the page */}
-        <div className="text-center my-6">
-          <AdBanner adSlot="6789012345" adFormat="leaderboard" />
+
+          {/* Planning Stack */}
+          {planningStack.length === 0 ? (
+            <Card className="p-8 text-center">
+              <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Your planning stack is empty</h3>
+              <p className="text-gray-600 mb-4">
+                Add venues from the explore page or your favorites to start planning your date.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button onClick={() => router.push('/explore')}>
+                  <Compass className="h-4 w-4 mr-2" />
+                  Explore Venues
+                </Button>
+                <Button variant="outline" onClick={() => setShowFavorites(true)}>
+                  <Heart className="h-4 w-4 mr-2" />
+                  Add from Favorites
+                </Button>
+              </div>
+            </Card>
+          ) : (
+            <div className="space-y-4 mb-8">
+              {planningStack.map((item, index) => (
+                <PlanningStackItem
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  totalItems={planningStack.length}
+                  onRemove={handleRemoveFromStack}
+                  onUpdate={handleUpdateItem}
+                  onMove={handleMoveItem}
+                  editingItem={editingItem}
+                  setEditingItem={setEditingItem}
+                  onViewDetails={openVenueDetails}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Add Item Section */}
+          <div className="mb-8">
+            <div className="text-center mb-6">
+              <div className="flex items-center justify-center space-x-3 mb-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Plus className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">Add More Items</h3>
+                  <p className="text-sm text-gray-600">Discover venues and activities for your date</p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowAddOptions(!showAddOptions)}
+                className="flex items-center space-x-2 mx-auto"
+                size="lg"
+              >
+                {showAddOptions ? (
+                  <>
+                    <X className="h-4 w-4" />
+                    <span>Hide Options</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    <span>Show Options</span>
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {showAddOptions && (
+              <div className="space-y-6">
+                {/* Quick Actions Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer border-2 border-transparent hover:border-blue-200">
+                    <CardContent className="p-6 text-center">
+                      <div className="p-3 bg-blue-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                        <Compass className="h-8 w-8 text-blue-600" />
+                      </div>
+                      <h4 className="font-semibold text-lg mb-2 text-gray-900">Explore New Venues</h4>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Discover amazing places in your area
+                      </p>
+                      <Button onClick={() => router.push('/explore')} className="w-full bg-blue-600 hover:bg-blue-700">
+                        <Compass className="h-4 w-4 mr-2" />
+                        Start Exploring
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer border-2 border-transparent hover:border-red-200">
+                    <CardContent className="p-6 text-center">
+                      <div className="p-3 bg-red-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center group-hover:bg-red-200 transition-colors">
+                        <Heart className="h-8 w-8 text-red-600" />
+                      </div>
+                      <h4 className="font-semibold text-lg mb-2 text-gray-900">Add from Favorites</h4>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Use your saved favorite places
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowFavorites(!showFavorites)}
+                        className="w-full border-red-200 text-red-600 hover:bg-red-50"
+                      >
+                        <Heart className="h-4 w-4 mr-2" />
+                        {showFavorites ? 'Hide Favorites' : 'Browse Favorites'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer border-2 border-transparent hover:border-green-200">
+                    <CardContent className="p-6 text-center">
+                      <div className="p-3 bg-green-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                        <Edit3 className="h-8 w-8 text-green-600" />
+                      </div>
+                      <h4 className="font-semibold text-lg mb-2 text-gray-900">Custom Activities</h4>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Add your own personal touches
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowManualEntry(!showManualEntry)}
+                        className="w-full border-green-200 text-green-600 hover:bg-green-50"
+                      >
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        {showManualEntry ? 'Hide Custom' : 'Add Custom'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Favorites List - Now appears here when toggled */}
+                {showFavorites && (
+                  <Card className="border-2 border-red-100">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-red-100 rounded-lg">
+                          <Heart className="h-5 w-5 text-red-600" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-lg text-gray-900">Your Favorites</CardTitle>
+                          <p className="text-sm text-gray-600">Add your saved places to the planning stack</p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            placeholder="Search favorites..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-10 h-12 text-base"
+                          />
+                        </div>
+
+                        {filteredFavorites.length === 0 ? (
+                          <div className="text-center py-8">
+                            <Heart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-600 mb-2">No favorites found</p>
+                            <p className="text-sm text-gray-500">Try adjusting your search or add some favorites from the explore page</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                            {filteredFavorites.map((favorite) => (
+                              <FavoriteCard
+                                key={favorite.id}
+                                favorite={favorite}
+                                onToggleFavorite={handleToggleFavorite}
+                                onAddToStack={handleAddToStack}
+                                isInStack={planningStack.some(item => item.venue_id === favorite.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Search for Specific Venue */}
+                <Card className="border-2 border-gray-100 hover:border-gray-200 transition-colors">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-purple-100 rounded-lg">
+                        <Search className="h-5 w-5 text-purple-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg text-gray-900">Search for a Specific Venue</CardTitle>
+                        <p className="text-sm text-gray-600">Find specific restaurants, theaters, or venues using Google Places</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                        <Input
+                          placeholder="Search for a venue (e.g., 'AMC Theater', 'Olive Garden', 'Mall of America')"
+                          value={venueSearchQuery}
+                          onChange={(e) => {
+                            setVenueSearchQuery(e.target.value)
+                            if (e.target.value.trim()) {
+                              searchVenues(e.target.value)
+                            } else {
+                              setVenueSearchResults([])
+                            }
+                          }}
+                          className="pl-10 h-12 text-base"
+                        />
+                      </div>
+                      
+                      {searchingVenues && (
+                        <div className="text-center py-6">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
+                          <p className="text-sm text-gray-600 mt-3">Searching Google Places...</p>
+                        </div>
+                      )}
+
+                      {venueSearchResults.length > 0 && (
+                        <div className="space-y-3 max-h-64 overflow-y-auto">
+                          <h4 className="font-medium text-gray-900">Search Results</h4>
+                          {venueSearchResults.map((venue) => (
+                            <Card key={venue.id} className="cursor-pointer hover:shadow-md transition-shadow border border-gray-100">
+                              <CardContent className="p-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex-1">
+                                    <h4 className="font-semibold text-sm text-gray-900">{venue.name}</h4>
+                                    <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
+                                      <Badge variant="outline" className="text-xs">{venue.category}</Badge>
+                                      {venue.rating && (
+                                        <div className="flex items-center">
+                                          <Star className="w-3 h-3 text-yellow-400 fill-current mr-1" />
+                                          {venue.rating}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {venue.address && (
+                                      <div className="flex items-center text-xs text-gray-500 mt-1">
+                                        <MapPin className="w-3 h-3 mr-1" />
+                                        {venue.address}
+                                      </div>
+                                    )}
+                                    {venue.id.startsWith('custom-') && (
+                                      <div className="text-xs text-green-600 mt-1">
+                                        💡 Custom venue - you can add this to your planning stack
+                                      </div>
+                                    )}
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAddToStack(venue)}
+                                    className="ml-3"
+                                  >
+                                    <Plus className="w-4 h-4 mr-1" />
+                                    Add
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Manual Entry Section - Now controlled by the card button */}
+                      {showManualEntry && (
+                        <div className="border-t pt-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center space-x-2">
+                              <Edit3 className="h-4 w-4 text-green-600" />
+                              <h4 className="font-semibold text-sm text-gray-900">Add Custom Activity</h4>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-3 p-4 bg-green-50 rounded-lg border border-green-200">
+                            <div className="flex space-x-2">
+                              <Input
+                                placeholder="e.g., Board games after dinner, Movie night, etc."
+                                value={manualEntry}
+                                onChange={(e) => setManualEntry(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleAddManualEntry()
+                                  }
+                                }}
+                                className="flex-1"
+                              />
+                              <Button 
+                                onClick={handleAddManualEntry}
+                                disabled={!manualEntry.trim()}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-green-700">
+                              💡 Add any custom activity or event that's not in our database
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+
+          {/* Save Date Set Button */}
+          {planningStack.length > 0 && (
+            <div className="text-center mb-8">
+              <Button
+                size="lg"
+                onClick={() => setShowSaveModal(true)}
+                className="bg-gradient-to-r from-pink-500 to-red-500 hover:from-pink-600 hover:to-red-600"
+              >
+                <Save className="h-5 w-5 mr-2" />
+                Save as Date Set
+              </Button>
+            </div>
+          )}
+
+          {/* Add from Favorites Section */}
+          {/* This section is now handled by the button click */}
+
         </div>
       </main>
-      <Footer />
 
-      {/* Save Date Modal */}
-      {isDateModalOpen && (
-        <SaveDateModal isOpen={isDateModalOpen} onClose={() => setIsDateModalOpen(false)} places={getPlacesArray()} />
-      )}
+      {/* Venue Details Modal */}
+      <VenueDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={closeVenueDetails}
+        venue={selectedVenue}
+        onPlanDate={() => {}} // Not needed on this page
+        onToggleFavorite={(venueId: string) => {
+          // Find the venue by ID and call the handler
+          const venue = favorites.find(f => f.id === venueId) || selectedVenue
+          if (venue) {
+            handleToggleFavorite(venue)
+          }
+        }}
+      />
+
+      {/* Save Date Set Modal */}
+      <SaveDateSetModal
+        isOpen={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        onSave={handleSaveDateSet}
+        planningStack={planningStack}
+      />
+
+      <Footer />
     </>
   )
 }
 
-function ResultCard({
-  title,
-  result,
-  onFavorite,
-  isFavorite,
-  onRefresh,
-  onRandomize,
-  isRefreshing,
-  isLoggedIn,
-  isPremium,
+function PlanningStackItem({
+  item,
+  index,
+  totalItems,
+  onRemove,
+  onUpdate,
+  onMove,
+  editingItem,
+  setEditingItem,
+  onViewDetails
 }: {
-  title: string
-  result: PlaceResult
-  onFavorite: () => void
-  isFavorite: boolean
-  onRefresh: () => void
-  onRandomize?: () => void
-  isRefreshing?: boolean
-  isLoggedIn: boolean
-  isPremium?: boolean
+  item: PlanningStackItem
+  index: number
+  totalItems: number
+  onRemove: (id: string) => void
+  onUpdate: (id: string, updates: Partial<PlanningStackItem>) => void
+  onMove: (id: string, direction: 'up' | 'down') => void
+  editingItem: string | null
+  setEditingItem: (id: string | null) => void
+  onViewDetails: (venue: PlaceResult) => void
 }) {
-  // Determine the icon and color based on the category
-  const getCategoryIcon = () => {
-    switch (result.category) {
-      case "restaurant":
-        return <span className="text-sm text-rose-500">🍽️</span>
-      case "activity":
-        return <span className="text-sm text-purple-500">🎯</span>
-      case "outdoor":
-        return <span className="text-sm text-emerald-500">🌳</span>
-      default:
-        return null
+  const [editData, setEditData] = useState({
+    scheduled_time: item.scheduled_time || '',
+    duration_minutes: item.duration_minutes || 60,
+    notes: item.notes || ''
+  })
+
+  const isEditing = editingItem === item.id
+
+  const handleSave = () => {
+    onUpdate(item.id, editData)
+  }
+
+  const handleCancel = () => {
+    setEditData({
+      scheduled_time: item.scheduled_time || '',
+      duration_minutes: item.duration_minutes || 60,
+      notes: item.notes || ''
+    })
+    setEditingItem(null)
+  }
+
+  const handleCardClick = () => {
+    // Convert PlanningStackItem to PlaceResult format
+    const venue: PlaceResult = {
+      id: item.venue_id,
+      name: item.venue_name,
+      category: item.venue_category,
+      address: item.venue_address || '',
+      rating: item.venue_rating,
+      price: item.venue_price_level || 0,
+      photoUrl: item.venue_photo_url,
+      openNow: undefined,
+      placeId: item.venue_id,
+      phone: undefined,
+      website: undefined,
+      description: undefined
     }
+    onViewDetails(venue)
   }
 
   return (
-    <Card
-      className={cn(
-        "transform transition-all hover:scale-[1.02] group overflow-hidden",
-        result.category === "outdoor" && "border-emerald-200",
-      )}
-    >
-      {result.photoUrl && (
-        <div className="h-40 w-full overflow-hidden">
-          <Image
-            src={result.photoUrl || "/placeholder.svg"}
-            alt={result.name}
-            width={500}
-            height={300}
-            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-            crossOrigin="anonymous"
-          />
-        </div>
-      )}
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-3 px-4">
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-xl font-semibold">{title}</CardTitle>
-          {getCategoryIcon()}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon"
-            variant="ghost"
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              onFavorite()
-            }}
-            className={cn(
-              "h-8 w-8", 
-              !isLoggedIn ? "text-gray-400 hover:text-rose-500" :
-              "text-rose-500"
+    <Card className="border-l-4 border-l-blue-500 cursor-pointer hover:shadow-md transition-shadow" onClick={handleCardClick}>
+      <CardContent className="p-4">
+        <div className="flex items-start space-x-4">
+          {/* Position and Move Controls */}
+          <div className="flex flex-col items-center space-y-1">
+            <Badge variant="secondary" className="w-8 h-8 flex items-center justify-center">
+              {index + 1}
+            </Badge>
+            <div className="flex flex-col space-y-1">
+              {index > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMove(item.id, 'up')
+                  }}
+                  className="h-6 w-6 p-0"
+                >
+                  <ArrowUp className="w-3 h-3" />
+                </Button>
+              )}
+              {index < totalItems - 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onMove(item.id, 'down')
+                  }}
+                  className="h-6 w-6 p-0"
+                >
+                  <ArrowDown className="w-3 h-3" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Venue Info */}
+          <div className="flex-1">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h3 className="font-semibold text-lg">{item.venue_name}</h3>
+                <div className="flex items-center space-x-2 text-sm text-gray-600">
+                  <Badge variant="outline">{item.venue_category}</Badge>
+                  {item.venue_rating && (
+                    <div className="flex items-center">
+                      <Star className="w-3 h-3 text-yellow-400 fill-current mr-1" />
+                      {item.venue_rating}
+                    </div>
+                  )}
+                  {item.venue_price_level && (
+                    <div className="flex items-center">
+                      {[...Array(item.venue_price_level)].map((_, i) => (
+                        <DollarSign key={i} className="w-3 h-3 text-green-600" />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {item.venue_address && (
+                  <div className="flex items-center text-sm text-gray-500 mt-1">
+                    <MapPin className="w-3 h-3 mr-1" />
+                    {item.venue_address}
+                  </div>
+                )}
+              </div>
+              <div className="flex space-x-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setEditingItem(isEditing ? null : item.id)
+                  }}
+                >
+                  <Edit3 className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRemove(item.id)
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Edit Form */}
+            {isEditing && (
+              <div className="mt-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="scheduled_time">Scheduled Time</Label>
+                    <Input
+                      id="scheduled_time"
+                      type="time"
+                      value={editData.scheduled_time}
+                      onChange={(e) => setEditData(prev => ({ ...prev, scheduled_time: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="duration_minutes">Duration (minutes)</Label>
+                    <Input
+                      id="duration_minutes"
+                      type="number"
+                      min="15"
+                      max="480"
+                      value={editData.duration_minutes}
+                      onChange={(e) => setEditData(prev => ({ ...prev, duration_minutes: parseInt(e.target.value) || 60 }))}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    value={editData.notes}
+                    onChange={(e) => setEditData(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Add any notes about this venue..."
+                  />
+                </div>
+                <div className="flex space-x-2">
+                  <Button size="sm" onClick={handleSave}>
+                    <Check className="w-4 h-4 mr-1" />
+                    Save
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleCancel}>
+                    <X className="w-4 h-4 mr-1" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
             )}
-            title={
-              !isLoggedIn ? "Login to save favorites" :
-              isFavorite ? "Remove from favorites" : "Add to favorites"
-            }
-          >
-            <Heart className={cn("h-4 w-4", isFavorite && "fill-current")} />
-            <span className="sr-only">Favorite {title}</span>
-          </Button>
-          {onRandomize && (
-            <Button
-              size="icon"
-              variant="ghost"
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onRandomize()
-              }}
-              disabled={isRefreshing}
-              className="h-8 w-8 transition-opacity"
-              title={`Surprise me with a different ${title.toLowerCase()}`}
-            >
-              <Sparkles className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-              <span className="sr-only">Randomize {title}</span>
-            </Button>
-          )}
-          <Button
-            size="icon"
-            variant="ghost"
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              onRefresh()
-            }}
-            disabled={isRefreshing}
-            className="h-8 w-8 transition-opacity"
-          >
-            <RefreshCcw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-            <span className="sr-only">Refresh {title}</span>
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="py-2 px-4">
-        <div className="space-y-2">
-          <h3 className="font-medium text-lg">{result.name}</h3>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center">
-              <Star className="h-4 w-4 text-yellow-500 mr-1" />
-              <span className="text-sm">{result.rating?.toFixed(1) || 'N/A'}</span>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {Array.from({ length: result.price }).map((_, i) => (
-                <span key={i} className="text-green-500">
-                  $
-                </span>
-              ))}
-            </div>
-            {result.openNow !== undefined && (
-              <div className="text-sm">
-                {result.openNow ? (
-                  <span className="text-green-600">Open now</span>
-                ) : (
-                  <span className="text-red-500">Closed</span>
+
+            {/* Display Current Settings */}
+            {!isEditing && (item.scheduled_time || item.notes) && (
+              <div className="mt-2 space-y-1">
+                {item.scheduled_time && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {item.scheduled_time} ({item.duration_minutes} min)
+                  </div>
+                )}
+                {item.notes && (
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">Notes:</span> {item.notes}
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
       </CardContent>
-      <CardFooter className="flex justify-between items-center py-2 px-4">
-        <div className="flex items-center text-sm text-muted-foreground">
-          <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
-          <p className="truncate">{result.address}</p>
+    </Card>
+  )
+}
+
+function FavoriteCard({
+  favorite,
+  onToggleFavorite,
+  onAddToStack,
+  isInStack
+}: {
+  favorite: PlaceResult
+  onToggleFavorite: (venue: PlaceResult) => void
+  onAddToStack: (venue: PlaceResult) => void
+  isInStack: boolean
+}) {
+  return (
+    <Card className="cursor-pointer hover:shadow-md transition-shadow">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <h4 className="font-semibold text-sm">{favorite.name}</h4>
+            <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
+              <Badge variant="outline" className="text-xs">{favorite.category}</Badge>
+              {favorite.rating && (
+                <div className="flex items-center">
+                  <Star className="w-3 h-3 text-yellow-400 fill-current mr-1" />
+                  {favorite.rating}
+                </div>
+              )}
+            </div>
+            {favorite.address && (
+              <div className="flex items-center text-xs text-gray-500 mt-1">
+                <MapPin className="w-3 h-3 mr-1" />
+                {favorite.address}
+              </div>
+            )}
+          </div>
+          <div className="flex space-x-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleFavorite(favorite)
+              }}
+            >
+              <Heart className={`w-4 h-4 ${isInStack ? 'fill-red-500 text-red-500' : ''}`} />
+            </Button>
+            <Button
+              variant={isInStack ? "default" : "outline"}
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddToStack(favorite)
+              }}
+              disabled={isInStack}
+            >
+              <Bookmark className="w-4 h-4 mr-1" />
+              {isInStack ? 'In Stack' : 'Add to Stack'}
+            </Button>
+          </div>
         </div>
-      </CardFooter>
+      </CardContent>
     </Card>
   )
 }

@@ -55,6 +55,7 @@ interface VenueDetails {
     ticketPrice?: string
     venue?: string
   }
+  photoUrl?: string // Added for new_code
 }
 
 interface VenueDetailsModalProps {
@@ -228,11 +229,13 @@ export function VenueDetailsModal({
         ) : (
           <div className="space-y-6">
             {/* Photo Gallery */}
-            {detailedVenue.photos && detailedVenue.photos.length > 0 && (
+            {(detailedVenue.photos && detailedVenue.photos.length > 0) || detailedVenue.image || detailedVenue.photoUrl ? (
               <div className="space-y-2">
                 <div className="relative h-64 rounded-lg overflow-hidden">
                   <img
-                    src={detailedVenue.photos[activePhotoIndex]}
+                    src={detailedVenue.photos && detailedVenue.photos.length > 0 
+                      ? detailedVenue.photos[activePhotoIndex] 
+                      : detailedVenue.image || detailedVenue.photoUrl}
                     alt={detailedVenue.name}
                     className="w-full h-full object-cover"
                   />
@@ -243,13 +246,13 @@ export function VenueDetailsModal({
                       Generic Event Image
                     </div>
                   )}
-                  {detailedVenue.photos.length > 1 && (
+                  {detailedVenue.photos && detailedVenue.photos.length > 1 && (
                     <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 rounded text-sm">
                       {activePhotoIndex + 1} / {detailedVenue.photos.length}
                     </div>
                   )}
                 </div>
-                {detailedVenue.photos.length > 1 && (
+                {detailedVenue.photos && detailedVenue.photos.length > 1 && (
                   <div className="flex space-x-2 overflow-x-auto">
                     {detailedVenue.photos.map((photo, index) => (
                       <button
@@ -271,6 +274,10 @@ export function VenueDetailsModal({
                     📸 Image shown is for illustration purposes only and may not represent the actual event or venue.
                   </p>
                 )}
+              </div>
+            ) : (
+              <div className="w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center">
+                <Camera className="h-12 w-12 text-gray-400" />
               </div>
             )}
 

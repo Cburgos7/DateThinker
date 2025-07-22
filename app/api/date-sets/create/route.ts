@@ -7,10 +7,10 @@ export async function POST(request: Request) {
   try {
     const { title, date, start_time, end_time, places, notes, share_id } = await request.json();
     
-    // Validation
-    if (!title || !date || !start_time || !places || !Array.isArray(places) || places.length === 0) {
+    // Validation - only title and places are required
+    if (!title || !places || !Array.isArray(places) || places.length === 0) {
       return NextResponse.json({ 
-        error: "Missing required fields: title, date, start_time, and places are required" 
+        error: "Missing required fields: title and places are required" 
       }, { status: 400 });
     }
     
@@ -25,15 +25,20 @@ export async function POST(request: Request) {
     
     console.log("🔄 Create Date Set API - User:", user.email, "Title:", title);
     
+    // Use default values for optional fields
+    const defaultDate = date || new Date().toISOString().split('T')[0]; // Today if no date provided
+    const defaultStartTime = start_time || '12:00'; // Noon if no time provided
+    const defaultEndTime = end_time || '23:59'; // End of day if no time provided
+    
     // Create the date set
     const { data: dateSet, error: insertError } = await supabase
       .from("date_sets")
       .insert({
         user_id: user.id,
         title: title.trim(),
-        date: date,
-        start_time: start_time,
-        end_time: end_time || '23:59',
+        date: defaultDate,
+        start_time: defaultStartTime,
+        end_time: defaultEndTime,
         places: places, // JSONB field
         notes: notes ? notes.trim() : null,
         share_id: share_id,
