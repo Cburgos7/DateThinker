@@ -273,18 +273,58 @@ export default function MakeDatePage() {
     notes: string
   }) => {
     try {
-      // Implementation for saving date set
-      console.log("Saving date set:", dateSet)
-      toast({
-        title: "Date set saved",
-        description: "Your date set has been saved successfully.",
+      // Convert planning stack items to the format expected by the API
+      const placesData = planningStack.map(item => ({
+        id: item.venue_id || item.id,
+        name: item.venue_name,
+        address: item.venue_address || '',
+        rating: item.venue_rating,
+        price: item.venue_price_level || 2,
+        photo_url: item.venue_photo_url,
+        types: [item.venue_category],
+        google_place_id: item.venue_id
+      }))
+
+      // Generate a unique share ID
+      const shareId = `share-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+
+      const response = await fetch('/api/date-sets/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: dateSet.title,
+          date: dateSet.date || new Date().toISOString().split('T')[0], // Use today if no date provided
+          start_time: dateSet.startTime || '12:00', // Use noon if no time provided
+          end_time: dateSet.endTime || '23:59', // Use end of day if no time provided
+          places: placesData,
+          notes: dateSet.notes || null,
+          share_id: shareId
+        })
       })
-      setShowSaveModal(false)
+
+      if (response.ok) {
+        const result = await response.json()
+        toast({
+          title: "Date set saved!",
+          description: `"${dateSet.title}" has been saved with ${planningStack.length} places.`,
+        })
+        setShowSaveModal(false)
+        
+        // Clear the planning stack after successful save
+        await handleClearStack()
+      } else {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to save date set')
+      }
     } catch (error) {
       console.error("Error saving date set:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to save date set."
       toast({
         title: "Error",
-        description: "Failed to save date set.",
+        description: errorMessage,
         variant: "destructive",
       })
     }

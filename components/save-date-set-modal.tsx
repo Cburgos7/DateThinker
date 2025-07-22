@@ -32,7 +32,7 @@ export function SaveDateSetModal({ isOpen, onClose, planningStack, onSave }: Sav
   const [isSaving, setIsSaving] = useState(false)
 
   const handleSave = async () => {
-    if (!title.trim() || !date || !startTime || !endTime) {
+    if (!title.trim()) {
       return
     }
 
@@ -40,9 +40,9 @@ export function SaveDateSetModal({ isOpen, onClose, planningStack, onSave }: Sav
     try {
       await onSave({
         title: title.trim(),
-        date,
-        startTime,
-        endTime,
+        date: date || '',
+        startTime: startTime || '',
+        endTime: endTime || '',
         notes: notes.trim()
       })
       
@@ -93,47 +93,62 @@ export function SaveDateSetModal({ isOpen, onClose, planningStack, onSave }: Sav
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date *
+                  Date (Optional)
                 </label>
                 <Input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
+                  placeholder="Select date"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Required for Google Calendar sharing
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Time *
+                  Start Time (Optional)
                 </label>
                 <Input
                   type="time"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
+                  placeholder="Select time"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Required for Google Calendar sharing
+                </p>
               </div>
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                End Time *
+                End Time (Optional)
               </label>
               <Input
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
+                placeholder="Select time"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Required for Google Calendar sharing
+              </p>
             </div>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
+                Notes (Optional)
               </label>
               <Textarea
-                placeholder="Add any special notes or preferences..."
+                placeholder="Add any special notes, preferences, or details for Google Calendar..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Will be included in Google Calendar event description
+              </p>
             </div>
           </div>
 
@@ -183,10 +198,15 @@ export function SaveDateSetModal({ isOpen, onClose, planningStack, onSave }: Sav
             </Button>
             <Button 
               onClick={handleSave}
-              disabled={!title.trim() || !date || !startTime || !endTime || isSaving}
+              disabled={!title.trim() || isSaving}
             >
               {isSaving ? 'Saving...' : 'Save Date Set'}
             </Button>
+          </div>
+          
+          {/* Help Text */}
+          <div className="text-xs text-gray-500 text-center pt-2 border-t">
+            <p>💡 <strong>Tip:</strong> Only the title is required. Add date and time if you plan to share to Google Calendar!</p>
           </div>
         </CardContent>
       </Card>
