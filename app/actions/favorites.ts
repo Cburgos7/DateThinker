@@ -1,6 +1,6 @@
 import { createClient } from "@/utils/supabase/client"
 import { getCurrentUser, getUserWithSubscription } from "@/lib/supabase"
-import { addToFavorites, removeFromFavorites, isInFavorites } from "@/lib/favorites"
+import { addToFavorites, removeFromFavorites, isInFavorites, getUserFavorites } from "@/lib/favorites"
 import type { PlaceResult } from "@/lib/search-utils"
 
 export async function toggleFavorite(place: PlaceResult): Promise<{ success: boolean; isFavorite: boolean }> {
@@ -158,6 +158,39 @@ export async function removeFromFavoritesAction(userId: string, placeId: string)
       success: false, 
       error: error instanceof Error ? error.message : "Unknown error" 
     }
+  }
+}
+
+export async function getFavorites(): Promise<PlaceResult[]> {
+  try {
+    // First try to get user from client-side session
+    let user = await getCurrentUser()
+    let userId: string | null = null
+    
+    if (user) {
+      userId = user.id
+    } else {
+      // If that fails, try the API fallback
+      try {
+        const response = await fetch("/api/auth/subscription-status")
+        const data = await response.json()
+        
+        if (data.authenticated && data.user_id) {
+          userId = data.user_id
+        }
+      } catch (apiError) {
+        console.error("API fallback failed:", apiError)
+      }
+    }
+
+    if (!userId) {
+      return []
+    }
+
+    return await getUserFavorites(userId)
+  } catch (error) {
+    console.error("Error getting favorites:", error)
+    return []
   }
 }
 

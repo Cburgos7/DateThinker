@@ -20,7 +20,14 @@ import {
   TrendingUp,
   Users,
   Eye,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Trash2,
+  Save,
+  ArrowUp,
+  ArrowDown,
+  Edit3,
+  X,
+  Check
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -36,6 +43,8 @@ import { type PlaceResult } from "@/lib/search-utils"
 import Image from "next/image"
 import { toast } from '@/hooks/use-toast'
 import { toggleFavorite as toggleFavoriteAction } from "@/app/actions/favorites"
+import { addToPlanningStack } from "@/app/actions/planning-stack"
+import { getPlanningStack } from "@/app/actions/planning-stack"
 
 interface Venue {
   id: string
@@ -105,6 +114,7 @@ export default function ExplorePage() {
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null)
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
+  const [planningStackIds, setPlanningStackIds] = useState<string[]>([])
   
   // Get user's location
   const requestLocation = async () => {
@@ -243,6 +253,21 @@ export default function ExplorePage() {
       fetchSocialData(userLocation)
     }
   }, [userLocation, locationPermission]) // Only load when we have a real location
+
+  useEffect(() => {
+    if (user) {
+      loadPlanningStackIds()
+    }
+  }, [user])
+
+  const loadPlanningStackIds = async () => {
+    try {
+      const stack = await getPlanningStack()
+      setPlanningStackIds(stack.map(item => item.venue_id))
+    } catch (error) {
+      console.error("Error loading planning stack IDs:", error)
+    }
+  }
 
   // Filter venues based on active filters
   const filteredVenues = useMemo(() => {
@@ -446,6 +471,64 @@ export default function ExplorePage() {
     }
   }
 
+  const handleAddToStack = async (venue: Venue) => {
+    console.log("🔍 handleAddToStack called with venue:", venue) // Debug log
+    
+    if (!user) {
+      console.log("❌ No user found") // Debug log
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to add venues to your planning stack.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log("✅ User found:", user.email) // Debug log
+
+    try {
+      console.log("🔄 Converting venue to PlaceResult format...") // Debug log
+      
+      const placeResult = {
+        id: venue.id,
+        name: venue.name,
+        category: venue.category,
+        address: venue.address || '',
+        rating: venue.rating,
+        price: venue.priceLevel,
+        photoUrl: venue.image,
+      }
+      
+      console.log("📦 PlaceResult:", placeResult) // Debug log
+      
+      const result = await addToPlanningStack(placeResult)
+
+      console.log(" addToPlanningStack result:", result) // Debug log
+
+      if (result.success) {
+        // Refresh the planning stack IDs
+        await loadPlanningStackIds()
+        toast({
+          title: "Added to planning stack!",
+          description: `${venue.name} has been added to your planning stack.`,
+        })
+      } else {
+        toast({
+          title: "Already in stack",
+          description: result.error || "This venue is already in your planning stack.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("❌ Error adding to planning stack:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add venue to planning stack.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const getSocialProofText = (venueId: string) => {
     // Generate random social proof for demo
     const visitors = Math.floor(Math.random() * 15) + 1
@@ -473,38 +556,38 @@ export default function ExplorePage() {
     }
   }
 
+  // Update the renderVenueCard function to remove fallbacks
   const renderVenueCard = (venue: Venue, showTrendingBadge: boolean = false) => (
     <Card key={`venue-${venue.id}-${venue.category}`} className="group hover:shadow-lg transition-all duration-300 cursor-pointer">
       <div className="relative">
-        <img 
-          src={venue.image || 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80'} 
-          alt={venue.name}
-          className="w-full h-48 object-cover rounded-t-lg"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement
-            // Use category-specific fallback images
-            let fallbackImage = 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80'
-            
-            if (venue.category === 'event') {
-              fallbackImage = 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?q=80&w=600&auto=format&fit=crop'
-            } else if (venue.category === 'restaurant') {
-              fallbackImage = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=600&auto=format&fit=crop'
-            } else if (venue.category === 'activity') {
-              fallbackImage = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=600&auto=format&fit=crop'
-            } else if (venue.category === 'outdoor') {
-              fallbackImage = 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=600&auto=format&fit=crop'
-            }
-            
-            target.src = fallbackImage
-          }}
-        />
-        {/* Add disclaimer for generic event images */}
-        {venue.category === 'event' && (
-          <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center">
-            <Camera className="w-3 h-3 mr-1" />
-            Sample Image
+        {venue.image ? (
+          <img 
+            src={venue.image} 
+            alt={venue.name}
+            className="w-full h-48 object-cover rounded-t-lg"
+          />
+        ) : (
+          <div className="w-full h-48 bg-gray-200 rounded-t-lg flex items-center justify-center">
+            <span className="text-gray-500 text-sm">No image available</span>
           </div>
         )}
+        
+        {/* Status Badges */}
+        <div className="absolute top-2 left-2 flex flex-col space-y-1">
+          {venue.isFavorite && (
+            <Badge className="bg-red-500 text-white text-xs">
+              <Heart className="w-3 h-3 mr-1 fill-current" />
+              Favorited
+            </Badge>
+          )}
+          {planningStackIds.includes(venue.id) && (
+            <Badge className="bg-blue-500 text-white text-xs">
+              <Plus className="w-3 h-3 mr-1" />
+              In Stack
+            </Badge>
+          )}
+        </div>
+        
         {showTrendingBadge && venue.trending && (
           <Badge className="absolute top-2 right-2 bg-orange-500 text-white">
             <TrendingUp className="w-3 h-3 mr-1" />
@@ -541,17 +624,21 @@ export default function ExplorePage() {
           </div>
         </div>
         
-        <p className="text-gray-600 text-sm mb-2 line-clamp-2">
-          {venue.description || 'Discover something new'}
-        </p>
+        {venue.description && (
+          <p className="text-gray-600 text-sm mb-2 line-clamp-2">
+            {venue.description}
+          </p>
+        )}
         
-        {/* Social Proof */}
-        <div className="flex items-center space-x-1 mb-3">
-          <Users className="w-3 h-3 text-gray-400" />
-          <span className="text-xs text-gray-500">
-            {getSocialProofText(venue.id)}
-          </span>
-        </div>
+        {/* Social Proof - only show if we have real data */}
+        {socialData && (
+          <div className="flex items-center space-x-1 mb-3">
+            <Users className="w-3 h-3 text-gray-400" />
+            <span className="text-xs text-gray-500">
+              {getSocialProofText(venue.id)}
+            </span>
+          </div>
+        )}
         
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-2">
@@ -591,6 +678,18 @@ export default function ExplorePage() {
             {venue.isFavorite ? 'Favorited' : 'Add to Favorites'}
           </Button>
           <Button 
+            variant={planningStackIds.includes(venue.id) ? "default" : "outline"}
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              console.log("🔘 Add to Stack button clicked!")
+              handleAddToStack(venue)
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            {planningStackIds.includes(venue.id) ? 'In Stack' : 'Add to Stack'}
+          </Button>
+          <Button 
             variant="outline" 
             size="sm"
             onClick={(e) => {
@@ -601,13 +700,6 @@ export default function ExplorePage() {
             Details
           </Button>
         </div>
-
-        {/* Add helpful text below buttons */}
-        {!venue.isFavorite && (
-          <div className="mt-2 text-xs text-gray-500 text-center">
-            Build date sets from your favorites
-          </div>
-        )}
       </CardContent>
     </Card>
   )
