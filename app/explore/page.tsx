@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils"
 import { type PlaceResult } from "@/lib/search-utils"
 import Image from "next/image"
 import { toast } from '@/hooks/use-toast'
+import { toggleFavorite as toggleFavoriteAction } from "@/app/actions/favorites"
 
 interface Venue {
   id: string
@@ -265,14 +266,71 @@ export default function ExplorePage() {
   }, [venues, activeFilters])
 
   const handlePlanDate = (venue: Venue) => {
-    // Navigate to make-date page with pre-selected venue
-    const params = new URLSearchParams({
-      city: userLocation,
-      preselected: venue.id,
-      name: venue.name,
-      category: venue.category
-    })
-    router.push(`/make-date?${params.toString()}`)
+    // Add debugging at the very start
+    console.log('🔥 PLAN DATE CLICKED - Function started')
+    console.log('🔥 Venue data received:', venue)
+    console.log('🔥 User data:', user)
+    console.log('🔥 User location:', userLocation)
+
+    if (!user) {
+      console.log('🔥 No user - redirecting to login')
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to plan a date.",
+        variant: "destructive"
+      })
+      router.push('/login')
+      return
+    }
+
+    try {
+      console.log('🔥 Converting venue to PlaceResult...')
+      
+      // Convert venue to complete PlaceResult format for make-date page
+      const placeResult: PlaceResult = {
+        id: venue.id,
+        name: venue.name,
+        rating: venue.rating || 4.0,
+        address: venue.address || venue.location || '',
+        price: venue.priceLevel || 2,
+        category: venue.category,
+        photoUrl: venue.image,
+        openNow: venue.openNow,
+        placeId: venue.id,
+        phone: venue.phone,
+        website: venue.website,
+        description: venue.description
+      }
+
+      console.log('🔥 PlaceResult created:', placeResult)
+
+      // Navigate to make-date page with complete venue data (as JSON array)
+      const params = new URLSearchParams({
+        city: userLocation,
+        preselected: JSON.stringify([placeResult]), // Send as JSON array
+        mode: 'single',
+        source: 'explore'
+      })
+
+      console.log('🔥 URL params created:', params.toString())
+      console.log('🔥 About to navigate to:', `/make-date?${params.toString()}`)
+      
+      toast({
+        title: "Planning your date...",
+        description: `Starting with ${venue.name}`
+      })
+
+      router.push(`/make-date?${params.toString()}`)
+      console.log('🔥 Navigation completed')
+      
+    } catch (error) {
+      console.error('🔥 ERROR in handlePlanDate:', error)
+      toast({
+        title: "Error",
+        description: "Failed to start date planning. Please try again.",
+        variant: "destructive"
+      })
+    }
   }
 
   const handleManualLocationSearch = () => {
@@ -329,19 +387,63 @@ export default function ExplorePage() {
     setSelectedVenue(null)
   }
 
-  const toggleFavorite = async (venueId: string) => {
-    // Update UI immediately
-    setVenues(prev => prev.map(venue => 
-      venue.id === venueId 
-        ? { ...venue, isFavorite: !venue.isFavorite }
-        : venue
-    ))
-    
-    // TODO: Make API call to update favorites
-    toast({
-      title: "Favorite updated",
-      description: "Your preference has been saved.",
-    })
+  const handleToggleFavorite = async (venue: Venue) => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to save favorites.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      // Convert venue to PlaceResult format for the API
+      const placeResult: PlaceResult = {
+        id: venue.id,
+        name: venue.name,
+        rating: venue.rating || 4.0,
+        address: venue.address || venue.location || '',
+        price: venue.priceLevel || 2,
+        category: venue.category,
+        photoUrl: venue.image,
+        openNow: venue.openNow,
+        placeId: venue.id,
+        phone: venue.phone,
+        website: venue.website,
+        description: venue.description
+      }
+
+      // Call the proper API function
+      const result = await toggleFavoriteAction(placeResult)
+      
+      if (result.success) {
+        // Update UI with the actual database state
+        setVenues(prev => prev.map(v => 
+          v.id === venue.id 
+            ? { ...v, isFavorite: result.isFavorite }
+            : v
+        ))
+        
+        toast({
+          title: "Favorite updated",
+          description: result.isFavorite ? "Added to favorites" : "Removed from favorites",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to update favorite. Please try again.",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error)
+      toast({
+        title: "Error", 
+        description: "Failed to update favorite. Please try again.",
+        variant: "destructive"
+      })
+    }
   }
 
   const getSocialProofText = (venueId: string) => {
@@ -416,7 +518,7 @@ export default function ExplorePage() {
             className="absolute top-2 right-2 bg-white/80 hover:bg-white"
             onClick={(e) => {
               e.stopPropagation()
-              toggleFavorite(venue.id)
+              handleToggleFavorite(venue)
             }}
           >
             <Heart className={`w-4 h-4 ${venue.isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} />
@@ -479,9 +581,14 @@ export default function ExplorePage() {
           <Button 
             size="sm" 
             className="flex-1"
-            onClick={() => handlePlanDate(venue)}
+            variant={venue.isFavorite ? "default" : "outline"}
+            onClick={(e) => {
+              e.stopPropagation()
+              handleToggleFavorite(venue)
+            }}
           >
-            Plan a Date Here
+            <Heart className={`w-4 h-4 mr-1 ${venue.isFavorite ? 'fill-current' : ''}`} />
+            {venue.isFavorite ? 'Favorited' : 'Add to Favorites'}
           </Button>
           <Button 
             variant="outline" 
@@ -494,6 +601,13 @@ export default function ExplorePage() {
             Details
           </Button>
         </div>
+
+        {/* Add helpful text below buttons */}
+        {!venue.isFavorite && (
+          <div className="mt-2 text-xs text-gray-500 text-center">
+            Build date sets from your favorites
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -899,7 +1013,7 @@ export default function ExplorePage() {
           })
           router.push(`/make-date?${params.toString()}`)
         }}
-        onToggleFavorite={toggleFavorite}
+        onToggleFavorite={handleToggleFavorite}
       />
     </>
   )

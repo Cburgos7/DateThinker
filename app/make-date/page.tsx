@@ -36,6 +36,7 @@ import { getUserPreferences } from "@/app/actions/user-preferences"
 import { MultipleVenuesSection } from "@/components/multiple-venues-section"
 import { SequentialDatePlanner } from "@/components/sequential-date-planner"
 import { VENUE_TYPE_OPTIONS } from "@/lib/types"
+import { toast } from '@/hooks/use-toast'
 
 // Using consistent auth via useAuth hook
 
@@ -79,23 +80,99 @@ export default function Page() {
     outdoor?: boolean
   }>({})
 
-  // Handle URL parameters from explore page
+  // Enhanced URL parameter handling for preselected venues from explore page
   useEffect(() => {
-    if (!searchParams) return
-    
-    const venueId = searchParams.get('venue')
-    const cityParam = searchParams.get('city')
-    
-    if (cityParam) {
-      setCity(decodeURIComponent(cityParam))
+    // ✅ Remove the early return and use proper conditional logic
+    if (searchParams) {
+      const venueId = searchParams.get('venue')
+      const cityParam = searchParams.get('city')
+      const preselectedParam = searchParams.get('preselected')
+      const mode = searchParams.get('mode') // 'single' or 'comprehensive'
+      const source = searchParams.get('source') // 'explore'
+      
+      console.log('Make-date page URL params:', { venueId, cityParam, preselectedParam, mode, source })
+      
+      // Set city from URL
+      if (cityParam) {
+        setCity(decodeURIComponent(cityParam))
+      }
+      
+      // Handle preselected venues (NEW - this was missing!)
+      if (preselectedParam) {
+        try {
+          const preselectedVenues: PlaceResult[] = JSON.parse(decodeURIComponent(preselectedParam))
+          console.log('Preselected venues received:', preselectedVenues)
+          
+          if (mode === 'comprehensive' && preselectedVenues.length > 1) {
+            // Handle multiple venues from comprehensive planning
+            console.log('Setting up comprehensive date planning with', preselectedVenues.length, 'venues')
+            
+            // Initialize multiple venues section with the preselected venues
+            const venuesByCategory = preselectedVenues.reduce((acc, venue) => {
+              if (!acc[venue.category]) {
+                acc[venue.category] = []
+              }
+              acc[venue.category].push(venue)
+              return acc
+            }, {} as Record<string, PlaceResult[]>)
+            
+            // Set multiple venues mode and populate with preselected data
+            setMultipleVenues(venuesByCategory)
+            setIsExploring(true) // Enable multiple venues view
+            
+            // Show success message
+            console.log('Comprehensive date set loaded with venues:', venuesByCategory)
+            
+            toast({
+              title: "Date set loaded!",
+              description: `${preselectedVenues.length} venues imported from explore page.`
+            })
+            
+          } else if (preselectedVenues.length === 1) {
+            // Handle single venue planning
+            const venue = preselectedVenues[0]
+            console.log('Setting up single venue planning with:', venue.name)
+            
+            // Pre-populate results with the selected venue  
+            const mockResults: SearchResults = {
+              restaurant: venue.category === 'restaurant' ? venue : undefined,
+              activity: venue.category === 'activity' ? venue : undefined, 
+              outdoor: venue.category === 'outdoor' ? venue : undefined,
+              event: venue.category === 'event' ? venue : undefined
+            }
+            
+            setResults(mockResults)
+            // setHasSearched(true) // This state doesn't exist, so we'll just log
+            
+            // Show success message
+            console.log('Single venue loaded:', venue.name)
+            
+            toast({
+              title: "Venue loaded!",
+              description: `Starting your date plan with ${venue.name}.`
+            })
+          }
+          
+          // Clear URL params after processing to avoid re-processing
+          const newUrl = new URL(window.location.href)
+          newUrl.searchParams.delete('preselected')
+          newUrl.searchParams.delete('mode')
+          newUrl.searchParams.delete('source')
+          window.history.replaceState({}, '', newUrl.toString())
+          
+        } catch (error) {
+          console.error('Error parsing preselected venues:', error)
+          // Fallback: just set the city if venue parsing fails
+        }
+      }
+      
+      // Legacy support for old venue parameter
+      else if (venueId) {
+        console.log('Legacy venue parameter detected:', venueId)
+        // Could implement legacy venue fetching here if needed
+      }
     }
     
-    // Note: In a full implementation, you'd want to fetch the specific venue
-    // and pre-populate the results. For now, we just set the city.
-    if (venueId) {
-      console.log('Venue pre-selected from explore page:', venueId)
-      // You could fetch the specific venue here and add it to results
-    }
   }, [searchParams])
 
   // Fetch user subscription status when user changes

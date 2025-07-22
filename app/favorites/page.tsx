@@ -102,21 +102,25 @@ export default function FavoritesPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-4 flex-wrap mb-2">
-                    <div className="flex items-center">
-                      <Star className="h-4 w-4 text-yellow-500 mr-1" />
-                      <span className="text-sm">{place.rating.toFixed(1)}</span>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {Array.from({ length: place.price }).map((_, i) => (
-                        <span key={i} className="text-green-500">
-                          $
-                        </span>
-                      ))}
-                    </div>
+                    {place.rating && (
+                      <div className="flex items-center">
+                        <Star className="h-4 w-4 text-yellow-500 mr-1" />
+                        <span className="text-sm">{place.rating.toFixed(1)}</span>
+                      </div>
+                    )}
+                    {place.price && place.price > 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        {Array.from({ length: place.price }).map((_, i) => (
+                          <span key={i} className="text-green-500">
+                            $
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center text-sm text-muted-foreground">
                     <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
-                    <p className="truncate">{place.address}</p>
+                    <p className="truncate">{place.address || 'Address not available'}</p>
                   </div>
                 </CardContent>
               </Card>

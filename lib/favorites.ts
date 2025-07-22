@@ -1,9 +1,11 @@
-import { supabase } from "./supabase"
+import { createClient } from "@/utils/supabase/client"
 import type { PlaceResult } from "@/lib/search-utils"
 
 // Add a place to user's favorites
 export async function addToFavorites(userId: string, place: PlaceResult): Promise<boolean> {
   try {
+    const supabase = createClient()
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return false
@@ -32,6 +34,8 @@ export async function addToFavorites(userId: string, place: PlaceResult): Promis
 // Remove a place from user's favorites
 export async function removeFromFavorites(userId: string, placeId: string): Promise<boolean> {
   try {
+    const supabase = createClient()
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return false
@@ -77,6 +81,8 @@ export async function removeFromFavorites(userId: string, placeId: string): Prom
 // Get all favorites for a user
 export async function getUserFavorites(userId: string): Promise<PlaceResult[]> {
   try {
+    const supabase = createClient()
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return []
@@ -110,6 +116,8 @@ export async function getUserFavorites(userId: string): Promise<PlaceResult[]> {
 // Check if a place is in user's favorites
 export async function isInFavorites(userId: string, placeId: string): Promise<boolean> {
   try {
+    const supabase = createClient()
+    
     if (!supabase) {
       console.warn("Supabase client not initialized - missing environment variables")
       return false
