@@ -140,7 +140,8 @@ export async function GET(request: NextRequest) {
         city,
         searchQuery: search.trim(),
         maxResults: limit,
-        excludeIds
+        excludeIds,
+        discoveryMode: true // Enable discovery mode for better search results
       })
       
       return NextResponse.json({ 
@@ -151,27 +152,32 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Calculate offset for pagination
-    const offset = (page - 1) * limit
-    
-    // Get venues with extra results to determine if there are more pages
-    const maxResults = offset + limit + 1
+    // Enable discovery mode for pages beyond 5 to find more unique venues
+    const discoveryMode = page > 5
+    const extraFetch = page <= 3 ? 10 : 5 // Fetch fewer extra venues for later pages
     const venues = await searchPlacesForExplore({ 
       city, 
-      maxResults, 
-      excludeIds 
+      maxResults: limit + extraFetch, // Fetch extra to determine if there are more
+      excludeIds,
+      discoveryMode // Enable expanded discovery for later pages
     })
 
-    // Slice the results for the current page
-    const currentPageVenues = venues.slice(offset, offset + limit)
-    const hasMore = venues.length > offset + limit
+    // Determine if there are more results available
+    const hasMore = venues.length > limit
+    const currentPageVenues = venues.slice(0, limit)
 
-    return NextResponse.json({ 
+    // Add cache headers to reduce API calls for the same city
+    const response = NextResponse.json({ 
       venues: currentPageVenues.map(transformVenueForExplore), 
       hasMore,
       page,
       totalPages: Math.ceil(venues.length / limit)
     })
+    
+    // Cache results for 5 minutes to reduce API costs
+    response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600')
+    
+    return response
   } catch (error) {
     console.error('Error in explore API:', error)
     return NextResponse.json({ error: 'Failed to fetch venues' }, { status: 500 })

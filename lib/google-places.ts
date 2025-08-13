@@ -160,10 +160,10 @@ export function extractReviews(place: GooglePlace): Array<{
   if (!place.reviews) return []
   
   return place.reviews.slice(0, 3).map(review => ({
-    author: review.authorAttribution.displayName,
-    rating: review.rating,
-    text: review.text.text,
-    timeAgo: review.relativePublishTimeDescription
+    author: review.authorAttribution?.displayName || 'Anonymous',
+    rating: review.rating || 0,
+    text: review.text?.text || '',
+    timeAgo: review.relativePublishTimeDescription || ''
   }))
 }
 
@@ -175,6 +175,7 @@ export async function searchGooglePlaces(
   radius = 5000,
   minPrice?: number,
   maxPrice?: number,
+  maxResults = 20
 ): Promise<GooglePlace[]> {
   // This function should only be called server-side
   if (typeof window !== "undefined" && process.env.NODE_ENV !== "development") {
@@ -185,25 +186,14 @@ export async function searchGooglePlaces(
     // Sanitize inputs
     const sanitizedQuery = sanitizeInput(query)
 
-    // Build the request body for Places API v1
-    const requestBody: any = {
-      textQuery: sanitizedQuery,
-      languageCode: "en",
-    }
+    // Google Places API v1 has a limit of 20 results per request
+    const maxPerRequest = 20
+    const numRequests = Math.ceil(maxResults / maxPerRequest)
+    
+    console.log(`Making Google Places v1 search requests: ${sanitizedQuery} (total requested: ${maxResults}, requests needed: ${numRequests})`)
 
-    // Add price level filters if provided
-    if (minPrice !== undefined || maxPrice !== undefined) {
-      requestBody.priceLevels = []
-
-      const min = minPrice || 0
-      const max = maxPrice || 4
-
-      for (let i = min; i <= max; i++) {
-        requestBody.priceLevels.push(`PRICE_LEVEL_${i}`)
-      }
-    }
-
-    console.log(`Making Google Places v1 search request: ${sanitizedQuery}`)
+    const allPlaces: GooglePlace[] = []
+    const seenIds = new Set<string>()
 
     // This function should only be used server-side where the API key is available
     const apiKey = process.env.GOOGLE_API_KEY
@@ -211,53 +201,118 @@ export async function searchGooglePlaces(
       throw new Error("Google API key is not configured")
     }
 
-    // Make the API request to Places API v1 with enhanced field mask
-    const response = await fetch(`https://places.googleapis.com/v1/places:searchText`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": ENHANCED_FIELD_MASK, // Use enhanced field mask
-      },
-      body: JSON.stringify(requestBody),
-      cache: "no-store",
-    })
+    // Make multiple requests with different strategies to get more results
+    for (let i = 0; i < numRequests; i++) {
+      // Build the request body for Places API v1
+      const requestBody: any = {
+        textQuery: sanitizedQuery,
+        languageCode: "en",
+      }
 
-    if (!response.ok) {
-      console.error(`Google Places API v1 HTTP error: ${response.status} ${response.statusText}`)
-      const errorText = await response.text()
-      console.error(`Error response: ${errorText}`)
-      throw new Error(`Google Places API v1 HTTP error: ${response.status} ${response.statusText}`)
-    }
+      // Add price level filters if provided
+      if (minPrice !== undefined || maxPrice !== undefined) {
+        requestBody.priceLevels = []
 
-    const data = await response.json()
+        const min = minPrice || 0
+        const max = maxPrice || 4
 
-    console.log(`Google Places v1 search API response received`)
-    console.log(`Found ${data.places?.length || 0} places for query: ${sanitizedQuery}`)
-
-    // Log the first few results for debugging
-    if (data.places && data.places.length > 0) {
-      data.places.slice(0, 3).forEach((place: any, index: number) => {
-        console.log(`Result ${index + 1}: ${place.displayName?.text}, ${place.formattedAddress}`)
-        // Log additional rich data if available
-        if (place.nationalPhoneNumber) {
-          console.log(`  Phone: ${place.nationalPhoneNumber}`)
+        for (let j = min; j <= max; j++) {
+          requestBody.priceLevels.push(`PRICE_LEVEL_${j}`)
         }
-        if (place.websiteUri) {
-          console.log(`  Website: ${place.websiteUri}`)
-        }
-        if (place.editorialSummary?.text) {
-          console.log(`  Description: ${place.editorialSummary.text.substring(0, 100)}...`)
-        }
+      }
+
+      // For subsequent requests, try different search strategies to get more variety
+      if (i > 0) {
+        // Try different variations of the query to get more results
+        const variations = [
+          `${sanitizedQuery} near me`,
+          `${sanitizedQuery} ${location || ''}`,
+          `best ${sanitizedQuery}`,
+          `popular ${sanitizedQuery}`,
+          `${sanitizedQuery} restaurant`, // Add common terms
+          `${sanitizedQuery} place`,
+        ]
+        
+        // Use a different variation for each subsequent request
+        const variationIndex = (i - 1) % variations.length
+        requestBody.textQuery = variations[variationIndex]
+        
+        console.log(`Google Places request ${i + 1}/${numRequests}: using variation "${requestBody.textQuery}"`)
+      } else {
+        console.log(`Google Places request ${i + 1}/${numRequests}: using original query "${requestBody.textQuery}"`)
+      }
+
+      // Make the API request to Places API v1 with enhanced field mask
+      const response = await fetch(`https://places.googleapis.com/v1/places:searchText`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": ENHANCED_FIELD_MASK, // Use enhanced field mask
+        },
+        body: JSON.stringify(requestBody),
+        cache: "no-store",
       })
+
+      if (!response.ok) {
+        console.error(`Google Places API v1 HTTP error on request ${i + 1}: ${response.status} ${response.statusText}`)
+        const errorText = await response.text()
+        console.error(`Error response: ${errorText}`)
+        continue // Skip this request but continue with others
+      }
+
+      const data = await response.json()
+
+      console.log(`Google Places v1 search API response received for request ${i + 1}`)
+      console.log(`Found ${data.places?.length || 0} places for query: ${requestBody.textQuery}`)
+
+      // Log the first few results for debugging
+      if (data.places && data.places.length > 0) {
+        data.places.slice(0, 3).forEach((place: any, index: number) => {
+          console.log(`Result ${index + 1}: ${place.displayName?.text}, ${place.formattedAddress}`)
+          // Log additional rich data if available
+          if (place.nationalPhoneNumber) {
+            console.log(`  Phone: ${place.nationalPhoneNumber}`)
+          }
+          if (place.websiteUri) {
+            console.log(`  Website: ${place.websiteUri}`)
+          }
+          if (place.editorialSummary?.text) {
+            console.log(`  Description: ${place.editorialSummary.text.substring(0, 100)}...`)
+          }
+        })
+      }
+
+      if (data.error) {
+        console.error(`Google Places API v1 error on request ${i + 1}:`, data.error)
+        continue // Skip this request but continue with others
+      }
+
+      // Filter out duplicates and add new places
+      const newPlaces = (data.places || []).filter((place: GooglePlace) => {
+        if (!place.id || seenIds.has(place.id)) {
+          return false
+        }
+        seenIds.add(place.id)
+        return true
+      })
+
+      allPlaces.push(...newPlaces)
+      
+      // If we got fewer results than the per-request limit, we've likely reached the end
+      if (!data.places || data.places.length < maxPerRequest) {
+        console.log(`Reached end of Google Places results after ${i + 1} requests`)
+        break
+      }
+      
+      // Add a small delay between requests to be respectful to the API
+      if (i < numRequests - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     }
 
-    if (data.error) {
-      console.error(`Google Places API v1 error:`, data.error)
-      throw new Error(data.error.message || "API request error")
-    }
-
-    return data.places || []
+    console.log(`Total Google Places found: ${allPlaces.length}`)
+    return allPlaces
   } catch (error) {
     console.error("Error searching Google Places:", error)
     throw error

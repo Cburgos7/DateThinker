@@ -27,7 +27,8 @@ import {
   ArrowDown,
   Edit3,
   X,
-  Check
+  Check,
+  RefreshCw
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -86,8 +87,8 @@ interface SocialData {
 export default function ExplorePage() {
   const router = useRouter()
   const { user } = useAuth()
-  const [city, setCity] = useState("")
   const [userLocation, setUserLocation] = useState<string>('')
+  const [city, setCity] = useState('') // Add back city state for manual input
   const [locationError, setLocationError] = useState<string | null>(null)
   const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt' | null>(null)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
@@ -99,7 +100,6 @@ export default function ExplorePage() {
   const [socialLoading, setSocialLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [activeFilters, setActiveFilters] = useState({
     restaurants: false,
@@ -111,6 +111,8 @@ export default function ExplorePage() {
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [useLoadMoreButton, setUseLoadMoreButton] = useState(false) // New state for hybrid approach
+  const [discoveryMode, setDiscoveryMode] = useState(false) // Track if we're in discovery mode
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null)
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
@@ -207,20 +209,22 @@ export default function ExplorePage() {
     }
   }, [])
 
-  // Fetch venues function
+  // Fetch venues function with increased limit for better infinite scrolling
   const fetchVenues = useCallback(async (city: string, pageNum: number = 1, append: boolean = false, currentVenues: Venue[] = []) => {
     if (!city) return
     
     if (pageNum === 1) {
       setLoading(true)
       setError(null)
+      setUseLoadMoreButton(false) // Reset on new search
     } else {
       setLoadingMore(true)
     }
 
     try {
       const excludeIds = pageNum === 1 ? [] : currentVenues.map(v => v.id)
-      const response = await fetch(`/api/explore?city=${encodeURIComponent(city)}&page=${pageNum}&limit=20&excludeIds=${excludeIds.join(',')}`)
+      // Increased limit from 20 to 50 for better infinite scrolling experience
+      const response = await fetch(`/api/explore?city=${encodeURIComponent(city)}&page=${pageNum}&limit=50&excludeIds=${excludeIds.join(',')}`)
       
       if (!response.ok) {
         throw new Error('Failed to fetch venues')
@@ -236,6 +240,16 @@ export default function ExplorePage() {
       
       setHasMore(data.hasMore)
       setPage(pageNum)
+      
+      // Switch to Load More button after 3 pages to save on API costs
+      if (pageNum >= 3 && data.hasMore) {
+        setUseLoadMoreButton(true)
+      }
+      
+      // Enable discovery mode after 5 pages
+      if (pageNum >= 5) {
+        setDiscoveryMode(true)
+      }
     } catch (error) {
       console.error('Error fetching venues:', error)
       setError('Failed to load venues. Please try again.')
@@ -244,6 +258,41 @@ export default function ExplorePage() {
       setLoadingMore(false)
     }
   }, [])
+
+  // Load more venues when user scrolls to bottom (only if not using Load More button)
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore && userLocation && !useLoadMoreButton) {
+      fetchVenues(userLocation, page + 1, true, venues)
+    }
+  }, [loadingMore, hasMore, userLocation, page, venues, fetchVenues, useLoadMoreButton])
+
+  // Intersection Observer for infinite scrolling (only active when not using Load More button)
+  useEffect(() => {
+    if (useLoadMoreButton) return // Don't observe if we're using Load More button
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const target = entries[0]
+        if (target.isIntersecting && hasMore && !loadingMore) {
+          loadMore()
+        }
+      },
+      {
+        rootMargin: '100px', // Start loading 100px before reaching the bottom
+        threshold: 0.1
+      }
+    )
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current)
+    }
+
+    return () => {
+      if (loadMoreRef.current) {
+        observer.unobserve(loadMoreRef.current)
+      }
+    }
+  }, [hasMore, loadingMore, loadMore, useLoadMoreButton])
 
   // Load initial data when location is available
   useEffect(() => {
@@ -269,26 +318,179 @@ export default function ExplorePage() {
     }
   }
 
+  // Log venue state changes
+  useEffect(() => {
+    console.log(`Venues state changed:`, {
+      totalVenues: venues.length,
+      categoryBreakdown: venues.reduce((acc, v) => {
+        acc[v.category] = (acc[v.category] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+    })
+  }, [venues])
+
   // Filter venues based on active filters
   const filteredVenues = useMemo(() => {
-    return venues.filter(venue => {
-      // Check if any filters are active
-      const hasActiveFilters = Object.values(activeFilters).some(filter => filter)
-      
+    // Check if any filters are active
+    const hasActiveFilters = Object.values(activeFilters).some(filter => filter)
+    
+    if (!hasActiveFilters) {
       // If no filters are active, show all venues
-      if (!hasActiveFilters) {
-        return true
+      console.log(`Filtered venues (no filters active):`, {
+        totalVenues: venues.length,
+        filteredCount: venues.length,
+        activeFilters,
+        categoryBreakdown: venues.reduce((acc, v) => {
+          acc[v.category] = (acc[v.category] || 0) + 1
+          return acc
+        }, {} as Record<string, number>)
+      })
+      return venues
+    }
+    
+    // Filter venues based on active category filters
+    const filtered = venues.filter(venue => {
+      // Map venue categories to filter keys
+      const categoryMap: Record<string, keyof typeof activeFilters> = {
+        'restaurant': 'restaurants',
+        'activity': 'activities', 
+        'outdoor': 'outdoors',
+        'event': 'events'
       }
       
-      // If filters are active, only show venues that match the selected categories
-      const matchesRestaurants = activeFilters.restaurants && venue.category === 'restaurant'
-      const matchesActivities = activeFilters.activities && venue.category === 'activity'
-      const matchesOutdoors = activeFilters.outdoors && venue.category === 'outdoor'
-      const matchesEvents = activeFilters.events && venue.category === 'event'
-      
-      return matchesRestaurants || matchesActivities || matchesOutdoors || matchesEvents
+      const filterKey = categoryMap[venue.category]
+      return filterKey ? activeFilters[filterKey] : false
     })
+    
+    console.log(`Filtered venues (filters active):`, {
+      totalVenues: venues.length,
+      filteredCount: filtered.length,
+      activeFilters,
+      categoryBreakdown: venues.reduce((acc, v) => {
+        acc[v.category] = (acc[v.category] || 0) + 1
+        return acc
+      }, {} as Record<string, number>),
+      filteredCategoryBreakdown: filtered.reduce((acc, v) => {
+        acc[v.category] = (acc[v.category] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+    })
+    
+    return filtered
   }, [venues, activeFilters])
+
+  const handleDiscoverySearch = async (query: string) => {
+    if (!userLocation) return
+    
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const excludeIds = venues.map(v => v.id)
+      const response = await fetch(`/api/explore/discovery?city=${encodeURIComponent(userLocation)}&query=${encodeURIComponent(query)}&limit=20&excludeIds=${excludeIds.join(',')}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery venues')
+      }
+      
+      const data = await response.json()
+      setVenues(prev => [...prev, ...data.venues])
+      setHasMore(data.hasMore)
+      setDiscoveryMode(true)
+      
+      toast({
+        title: "Discovery Results",
+        description: `Found ${data.venues.length} new ${query.toLowerCase()} venues!`
+      })
+    } catch (error) {
+      console.error('Error fetching discovery venues:', error)
+      setError('Failed to load discovery venues. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCategoryDiscovery = async (category: string) => {
+    if (!userLocation) return
+    
+    setLoading(true)
+    setError(null)
+    
+    try {
+      // Use existing venue IDs to prevent duplicates
+      const excludeIds: string[] = venues.map(v => v.id)
+      
+      // Use category-specific search strategy
+      let searchQuery = category
+      let apiEndpoint = '/api/explore/discovery'
+      
+      // Map categories to specific search terms and API strategies
+      switch (category) {
+        case 'restaurants':
+          searchQuery = 'restaurants food dining'
+          break
+        case 'activities':
+          searchQuery = 'activities entertainment recreation'
+          break
+        case 'outdoors':
+          searchQuery = 'outdoors parks nature trails'
+          break
+        case 'events':
+          searchQuery = 'events concerts shows'
+          break
+        default:
+          searchQuery = category
+      }
+      
+                 const response = await fetch(`${apiEndpoint}?city=${encodeURIComponent(userLocation)}&query=${encodeURIComponent(searchQuery)}&limit=150&excludeIds=${excludeIds.join(',')}&category=${category}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch category discovery venues')
+      }
+      
+      const data = await response.json()
+      console.log(`Category discovery response for ${category}:`, {
+        venuesReturned: data.venues.length,
+        hasMore: data.hasMore,
+        totalVenuesBefore: venues.length,
+        totalVenuesAfter: venues.length + data.venues.length
+      })
+      setVenues(prev => {
+        const newVenues = [...prev, ...data.venues]
+        console.log(`Venues state updated:`, {
+          previousCount: prev.length,
+          newVenuesCount: data.venues.length,
+          totalCount: newVenues.length,
+          newVenues: data.venues.slice(0, 3).map((v: any) => ({ name: v.name, category: v.category }))
+        })
+        return newVenues
+      })
+             setHasMore(data.hasMore)
+       setDiscoveryMode(true)
+       
+       // Only update active filters if they're not already set (for discovery buttons, not filter toggles)
+       const isFilterToggle = activeFilters[category as keyof typeof activeFilters]
+       if (!isFilterToggle) {
+         setActiveFilters(prev => ({
+           ...prev,
+           restaurants: category === 'restaurants' ? true : prev.restaurants,
+           activities: category === 'activities' ? true : prev.activities,
+           outdoors: category === 'outdoors' ? true : prev.outdoors,
+           events: category === 'events' ? true : prev.events,
+         }))
+       }
+      
+      toast({
+        title: "Category Discovery",
+        description: `Found ${data.venues.length} new ${category.toLowerCase()} venues!`
+      })
+    } catch (error) {
+      console.error('Error fetching category discovery venues:', error)
+      setError('Failed to load category discovery venues. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handlePlanDate = (venue: Venue) => {
     // Add debugging at the very start
@@ -365,40 +567,6 @@ export default function ExplorePage() {
       setLocationError(null)
       // Reset city input
       setCity('')
-    }
-  }
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim() || !userLocation) return
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      // Search for specific venues by name
-      const response = await fetch(`/api/explore?city=${encodeURIComponent(userLocation)}&search=${encodeURIComponent(searchQuery)}&limit=50`)
-      
-      if (!response.ok) {
-        throw new Error('Failed to search venues')
-      }
-      
-      const data = await response.json()
-      setVenues(data.venues)
-      setHasMore(data.hasMore)
-      setPage(1)
-    } catch (error) {
-      console.error('Error searching venues:', error)
-      setError('Failed to search venues. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const clearSearch = () => {
-    setSearchQuery('')
-    // Reload original venues for the location
-    if (userLocation && locationPermission === 'granted') {
-      fetchVenues(userLocation, 1, false, [])
     }
   }
 
@@ -495,7 +663,7 @@ export default function ExplorePage() {
         category: venue.category,
         address: venue.address || '',
         rating: venue.rating,
-        price: venue.priceLevel,
+        price: venue.priceLevel || 0, // Default to 0 if priceLevel is undefined
         photoUrl: venue.image,
       }
       
@@ -540,19 +708,6 @@ export default function ExplorePage() {
       return `${favorites} people favorited this`
     } else {
       return `${visitors} people are exploring this`
-    }
-  }
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'favorite':
-        return <Heart className="w-3 h-3 text-red-500" />
-      case 'visit':
-        return <Eye className="w-3 h-3 text-blue-500" />
-      case 'plan':
-        return <CalendarIcon className="w-3 h-3 text-green-500" />
-      default:
-        return <Users className="w-3 h-3 text-gray-500" />
     }
   }
 
@@ -740,35 +895,42 @@ export default function ExplorePage() {
             <div className="flex items-center justify-center min-h-[400px]">
               <div className="text-center max-w-md">
                 <MapPin className="w-12 h-12 mx-auto mb-4 text-orange-600" />
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Enter Your Location</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Location Access Required</h2>
                 <p className="text-gray-600 mb-6">
-                  {locationError || 'Please enter your city to discover amazing places nearby'}
+                  Please enable location access or enter your city to discover amazing places near you.
                 </p>
                 
-                <div className="flex space-x-2 mb-4">
-                  <div className="relative flex-1">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <div className="space-y-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={requestLocation}
+                    className="w-full"
+                  >
+                    <Navigation className="w-4 h-4 mr-2" />
+                    Enable Location Access
+                  </Button>
+                  
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <MapPin className="h-5 w-5 text-gray-400" />
+                    </div>
                     <Input
-                      placeholder="Enter city (e.g., San Francisco, CA)"
+                      type="text"
+                      placeholder="Enter your city (e.g., Minneapolis, MN)"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                       className="pl-10"
                       onKeyPress={(e) => e.key === 'Enter' && handleManualLocationSearch()}
                     />
                   </div>
-                  <Button onClick={handleManualLocationSearch} disabled={!city.trim()}>
-                    Search
-                  </Button>
-                </div>
-                
-                <div className="text-center">
+                  
                   <Button 
-                    variant="outline" 
-                    onClick={requestLocation}
-                    className="text-sm"
+                    onClick={handleManualLocationSearch}
+                    disabled={!city.trim()}
+                    className="w-full"
                   >
-                    <Navigation className="w-4 h-4 mr-2" />
-                    Try Location Again
+                    <Search className="w-4 h-4 mr-2" />
+                    Search in {city.trim() || 'your city'}
                   </Button>
                 </div>
               </div>
@@ -903,112 +1065,93 @@ export default function ExplorePage() {
               </div>
             )}
 
-            {/* Recent Activity Section */}
-            {socialData && socialData.recentActivity.length > 0 && (
-              <div className="mb-8">
-                <div className="flex items-center space-x-2 mb-4">
-                  <Users className="w-5 h-5 text-blue-500" />
-                  <h2 className="text-xl font-semibold">Recent Activity</h2>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {socialData.recentActivity.map(activity => (
-                    <Card key={activity.id} className="p-4">
-                      <div className="flex items-center space-x-2">
-                        {getActivityIcon(activity.type)}
-                        <div>
-                          <p className="text-sm font-medium">{activity.venue}</p>
-                          <p className="text-xs text-gray-500">
-                            {activity.userCount} people • {activity.timeAgo}
-                          </p>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Search and Filters */}
+            {/* Location and Filters */}
             <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
               <div className="flex flex-col space-y-4">
-                {/* Search Bar */}
-                <div className="flex space-x-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <Input
-                      placeholder="Search for specific places (e.g., 'Minnesota Children's Museum')..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                      onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                    />
+                {/* Location Input */}
+                <div className="flex flex-col space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Location
+                  </label>
+                  <div className="flex space-x-2">
+                    <div className="relative flex-1">
+                      <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <Input
+                        placeholder="Enter city (e.g., Minneapolis, MN)"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        className="pl-10"
+                        onKeyPress={(e) => e.key === 'Enter' && handleManualLocationSearch()}
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleManualLocationSearch}
+                      disabled={!city.trim()}
+                    >
+                      <Search className="h-4 w-4 mr-1" />
+                      Update Location
+                    </Button>
                   </div>
-                  {searchQuery.trim() && (
-                    <>
-                      <Button onClick={handleSearch} disabled={loading}>
-                        <Search className="h-4 w-4 mr-1" />
-                        Search
-                      </Button>
-                      <Button variant="outline" onClick={clearSearch}>
-                        Clear
-                      </Button>
-                    </>
-                  )}
-                </div>
-                
-                {/* City Input */}
-                <div className="flex space-x-2">
-                  <div className="relative flex-1">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <Input
-                      placeholder="Change location..."
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="pl-10"
-                      onKeyPress={(e) => e.key === 'Enter' && handleManualLocationSearch()}
-                    />
-                  </div>
-                  <Button 
-                    onClick={handleManualLocationSearch} 
-                    disabled={!city.trim()}
-                    size="sm"
-                  >
-                    Update
-                  </Button>
                 </div>
 
                 {/* Filters */}
                 <div className="flex flex-wrap gap-2 items-center">
                   <Filter className="h-4 w-4 text-gray-400 mr-2" />
-                  <Toggle
-                    pressed={activeFilters.restaurants}
-                    onPressedChange={(pressed) => setActiveFilters(prev => ({...prev, restaurants: pressed}))}
-                    className="data-[state=on]:bg-rose-200 data-[state=on]:text-rose-800"
-                  >
-                    🍽️ Restaurants
-                  </Toggle>
-                  <Toggle
-                    pressed={activeFilters.activities}
-                    onPressedChange={(pressed) => setActiveFilters(prev => ({...prev, activities: pressed}))}
-                    className="data-[state=on]:bg-purple-200 data-[state=on]:text-purple-800"
-                  >
-                    🎯 Activities
-                  </Toggle>
-                  <Toggle
-                    pressed={activeFilters.outdoors}
-                    onPressedChange={(pressed) => setActiveFilters(prev => ({...prev, outdoors: pressed}))}
-                    className="data-[state=on]:bg-emerald-200 data-[state=on]:text-emerald-800"
-                  >
-                    🌳 Outdoors
-                  </Toggle>
-                  <Toggle
-                    pressed={activeFilters.events}
-                    onPressedChange={(pressed) => setActiveFilters(prev => ({...prev, events: pressed}))}
-                    className="data-[state=on]:bg-yellow-200 data-[state=on]:text-yellow-800"
-                  >
-                    🎭 Events
-                  </Toggle>
+                  <span className="text-sm text-gray-600 mr-2">
+                    Filter by category:
+                  </span>
+                                     <Toggle
+                     pressed={activeFilters.restaurants}
+                     onPressedChange={async (pressed) => {
+                       setActiveFilters(prev => ({...prev, restaurants: pressed}))
+                       if (pressed) {
+                         // When restaurant filter is activated, search for more restaurants
+                         await handleCategoryDiscovery('restaurants')
+                       }
+                     }}
+                     className="data-[state=on]:bg-rose-200 data-[state=on]:text-rose-800"
+                   >
+                     🍽️ Restaurants
+                   </Toggle>
+                   <Toggle
+                     pressed={activeFilters.activities}
+                     onPressedChange={async (pressed) => {
+                       setActiveFilters(prev => ({...prev, activities: pressed}))
+                       if (pressed) {
+                         // When activities filter is activated, search for more activities
+                         await handleCategoryDiscovery('activities')
+                       }
+                     }}
+                     className="data-[state=on]:bg-purple-200 data-[state=on]:text-purple-800"
+                   >
+                     🎯 Activities
+                   </Toggle>
+                   <Toggle
+                     pressed={activeFilters.outdoors}
+                     onPressedChange={async (pressed) => {
+                       setActiveFilters(prev => ({...prev, outdoors: pressed}))
+                       if (pressed) {
+                         // When outdoors filter is activated, search for more outdoor venues
+                         await handleCategoryDiscovery('outdoors')
+                       }
+                     }}
+                     className="data-[state=on]:bg-emerald-200 data-[state=on]:text-emerald-800"
+                   >
+                     🌳 Outdoors
+                   </Toggle>
+                   <Toggle
+                     pressed={activeFilters.events}
+                     onPressedChange={async (pressed) => {
+                       setActiveFilters(prev => ({...prev, events: pressed}))
+                       if (pressed) {
+                         // When events filter is activated, search for more events
+                         await handleCategoryDiscovery('events')
+                       }
+                     }}
+                     className="data-[state=on]:bg-yellow-200 data-[state=on]:text-yellow-800"
+                   >
+                     🎭 Events
+                   </Toggle>
                 </div>
 
                 {/* View Mode Toggle */}
@@ -1030,16 +1173,13 @@ export default function ExplorePage() {
                     </Button>
                   </div>
                   <span className="text-sm text-gray-500">
-                    {searchQuery.trim() ? 
-                      `${filteredVenues.length} search results for "${searchQuery}"` : 
-                      `${filteredVenues.length} places found${hasMore ? ' • More available' : ''}`
-                    }
+                    {filteredVenues.length} places found{hasMore ? (useLoadMoreButton ? ' • Load more available' : ' • Scroll for more') : ''}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Results */}
+            {/* Main Results */}
             {loading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[...Array(6)].map((_, i) => (
@@ -1061,52 +1201,226 @@ export default function ExplorePage() {
               </div>
             )}
 
-            {/* Load More */}
-            {hasMore && !loading && (
+            {/* Hybrid Loading System */}
+            {!loading && (
               <div ref={loadMoreRef} className="mt-8 text-center">
-                <Button 
-                  onClick={() => fetchVenues(userLocation, page + 1, true, venues)}
-                  disabled={loadingMore}
-                  className="px-8"
-                >
-                  {loadingMore ? 'Loading...' : 'Load More'}
-                </Button>
+                {loadingMore && (
+                  <div className="flex items-center justify-center space-x-2">
+                    <Compass className="h-6 w-6 animate-spin text-blue-600" />
+                    <span className="text-gray-600">Loading more venues...</span>
+                  </div>
+                )}
+                
+                                 {/* Load More Button (shown after 3 pages to save on API costs) */}
+                 {useLoadMoreButton && hasMore && !loadingMore && (
+                   <div className="flex flex-col items-center space-y-4">
+                     <div className="text-sm text-gray-500 mb-2">
+                       Showing {filteredVenues.length} venues • {hasMore ? 'More available' : 'All loaded'}
+                       {discoveryMode && (
+                         <span className="ml-2 text-blue-600 font-medium">
+                           🔍 Discovery Mode Active
+                         </span>
+                       )}
+                     </div>
+                     <Button
+                       onClick={() => fetchVenues(userLocation, page + 1, true, venues)}
+                       disabled={loadingMore}
+                       className="px-8"
+                     >
+                       {loadingMore ? (
+                         <>
+                           <Compass className="h-4 h-4 animate-spin mr-2" />
+                           Loading...
+                         </>
+                       ) : (
+                         <>
+                           <Plus className="h-4 h-4 mr-2" />
+                           {discoveryMode ? 'Discover More Venues' : 'Load More Venues'}
+                         </>
+                       )}
+                     </Button>
+                     <p className="text-xs text-gray-400">
+                       {discoveryMode ? 
+                         'Exploring expanded search areas and related venues for more unique options' :
+                         'Load more to discover additional venues in your area'
+                       }
+                     </p>
+                   </div>
+                 )}
+                 
+                 {/* Category-specific Load More Button when filters are active */}
+                 {Object.values(activeFilters).some(filter => filter) && !loadingMore && (
+                   <div className="flex flex-col items-center space-y-4 mt-4">
+                     <div className="text-sm text-gray-500 mb-2">
+                       Showing {filteredVenues.length} filtered venues
+                     </div>
+                     <Button
+                       onClick={async () => {
+                         const activeCategory = Object.entries(activeFilters).find(([_, isActive]) => isActive)?.[0]
+                         if (activeCategory) {
+                           await handleCategoryDiscovery(activeCategory)
+                         }
+                       }}
+                       disabled={loading}
+                       className="px-8"
+                     >
+                       {loading ? (
+                         <>
+                           <Compass className="h-4 h-4 animate-spin mr-2" />
+                           Loading...
+                         </>
+                       ) : (
+                         <>
+                           <Plus className="h-4 h-4 mr-2" />
+                           Load More {Object.entries(activeFilters).find(([_, isActive]) => isActive)?.[0]?.replace('s', '')}s
+                         </>
+                       )}
+                     </Button>
+                     <p className="text-xs text-gray-400">
+                       Load more venues of this specific category
+                     </p>
+                   </div>
+                 )}
+                
+                {/* End of results message */}
+                {!hasMore && filteredVenues.length > 0 && (
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="flex items-center justify-center space-x-2 text-gray-500">
+                      <Check className="h-5 w-5" />
+                      <span>You've reached the end! {filteredVenues.length} venues loaded.</span>
+                    </div>
+                    
+                    {/* Category Discovery suggestions */}
+                    <div className="text-center">
+                      <p className="text-sm text-gray-600 mb-3">
+                        Want to discover more unique venues?
+                      </p>
+                      <div className="flex flex-wrap gap-2 justify-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCategoryDiscovery('restaurants')}
+                          className="text-xs data-[state=on]:bg-rose-200 data-[state=on]:text-rose-800"
+                        >
+                          🍽️ Restaurants
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCategoryDiscovery('activities')}
+                          className="text-xs data-[state=on]:bg-purple-200 data-[state=on]:text-purple-800"
+                        >
+                          🎯 Activities
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCategoryDiscovery('outdoors')}
+                          className="text-xs data-[state=on]:bg-emerald-200 data-[state=on]:text-emerald-800"
+                        >
+                          🌳 Outdoors
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCategoryDiscovery('events')}
+                          className="text-xs data-[state=on]:bg-yellow-200 data-[state=on]:text-yellow-800"
+                        >
+                          🎭 Events
+                        </Button>
+                      </div>
+                      {discoveryMode && (
+                        <div className="mt-4">
+                          <Button
+                            variant="outline"
+                            onClick={() => handleCategoryDiscovery(activeFilters.restaurants ? 'restaurants' : 
+                              activeFilters.activities ? 'activities' : 
+                              activeFilters.outdoors ? 'outdoors' : 
+                              activeFilters.events ? 'events' : 'restaurants')}
+                            disabled={loading}
+                            className="mt-2"
+                          >
+                            {loading ? "Loading..." : "Load More Options"}
+                          </Button>
+                        </div>
+                      )}
+                      
+                      
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {filteredVenues.length === 0 && !loading && (
               <div className="text-center py-12">
                 <Compass className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No venues found</h3>
-                <p className="text-gray-600 mb-4">
-                  Try adjusting your search or filters, or enter a different city.
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No venues found
+                </h3>
+                <p className="text-gray-600 mb-4 max-w-md mx-auto">
+                  No venues found in {userLocation}. This might be due to limited data in this area.
                 </p>
-                <Button onClick={() => fetchVenues(userLocation, 1, false, [])}>
-                  Refresh Results
-                </Button>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button 
+                    onClick={() => {
+                      setSelectedCategory('all')
+                      setActiveFilters({
+                        restaurants: false,
+                        activities: false,
+                        outdoors: false,
+                        events: false,
+                      })
+                      fetchVenues(userLocation, 1, false, [])
+                    }}
+                    variant="outline"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Clear Filters & Refresh
+                  </Button>
+                </div>
+                <div className="mt-6 text-sm text-gray-500">
+                  <p>💡 Tips:</p>
+                  <ul className="mt-2 space-y-1">
+                    <li>• Check if you're in a major city or try a nearby location</li>
+                    <li>• Clear all filters to see all available venues</li>
+                    {discoveryMode && (
+                      <>
+                        <li>• Discovery mode is active - we're searching expanded areas</li>
+                        <li>• Try searching for specific cuisines like "Italian" or "Mexican"</li>
+                        <li>• Search for activities like "museum" or "bowling"</li>
+                      </>
+                    )}
+                  </ul>
+                </div>
               </div>
             )}
+
+            {/* Venue Details Modal */}
+            <VenueDetailsModal
+              isOpen={isDetailsModalOpen}
+              onClose={closeVenueDetails}
+              venue={selectedVenue}
+              onPlanDate={(venue) => {
+                const params = new URLSearchParams({
+                  city: userLocation,
+                  preselected: venue.id,
+                  name: venue.name,
+                  category: venue.category
+                })
+                router.push(`/make-date?${params.toString()}`)
+              }}
+              onToggleFavorite={(venueId: string) => {
+                const venue = venues.find(v => v.id === venueId)
+                if (venue) {
+                  handleToggleFavorite(venue)
+                }
+              }}
+            />
           </div>
         </div>
       </main>
       <Footer />
-      
-      {/* Venue Details Modal */}
-      <VenueDetailsModal
-        isOpen={isDetailsModalOpen}
-        onClose={closeVenueDetails}
-        venue={selectedVenue}
-        onPlanDate={(venue) => {
-          const params = new URLSearchParams({
-            city: userLocation,
-            preselected: venue.id,
-            name: venue.name,
-            category: venue.category
-          })
-          router.push(`/make-date?${params.toString()}`)
-        }}
-        onToggleFavorite={handleToggleFavorite}
-      />
     </>
   )
 } 
