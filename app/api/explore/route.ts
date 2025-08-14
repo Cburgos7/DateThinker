@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { searchPlacesForExplore, searchTrendingVenues, getSocialData, searchSpecificVenues } from '@/lib/search-utils'
+import { searchPlacesForExploreFree, searchTrendingVenues, getSocialData, searchSpecificVenues } from '@/lib/search-utils'
 import { type PlaceResult } from '@/lib/search-utils'
 
 export const runtime = 'nodejs'
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     
     // For infinite scroll, we need to fetch more venues than before
     // We'll fetch extra venues and use excludeIds to avoid duplicates
-    const venues = await searchPlacesForExplore({
+    const venues = await searchPlacesForExploreFree({
       city: body.city,
       placeId: body.placeId,
       maxResults: limit,
@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
     const trending = searchParams.get('trending') === 'true'
     const social = searchParams.get('social') === 'true'
     const search = searchParams.get('search') // New search parameter
+    const category = searchParams.get('category') || undefined
 
     if (!city) {
       return NextResponse.json({ error: 'City parameter is required' }, { status: 400 })
@@ -155,11 +156,14 @@ export async function GET(request: NextRequest) {
     // Enable discovery mode for pages beyond 5 to find more unique venues
     const discoveryMode = page > 5
     const extraFetch = page <= 3 ? 10 : 5 // Fetch fewer extra venues for later pages
-    const venues = await searchPlacesForExplore({ 
+    const venues = await searchPlacesForExploreFree({ 
       city, 
       maxResults: limit + extraFetch, // Fetch extra to determine if there are more
       excludeIds,
-      discoveryMode // Enable expanded discovery for later pages
+      discoveryMode, // Enable expanded discovery for later pages
+      // forward category to backend for proper filtering
+      // @ts-ignore
+      category
     })
 
     // Determine if there are more results available

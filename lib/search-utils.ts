@@ -10,6 +10,7 @@ import {
 } from "@/lib/google-places"
 import { fetchAllEvents, createFallbackEvents } from "@/lib/events-api"
 import { fetchYelpRestaurants } from "@/lib/yelp-api"
+import { isTestMode } from "@/lib/app-config"
 
 // Define the schema for search parameters with more strict validation
 export const searchParamsSchema = z.object({
@@ -35,7 +36,7 @@ export type PlaceResult = {
   isOutdoor?: boolean
   photoUrl?: string
   openNow?: boolean
-  category: "restaurant" | "activity" | "outdoor" | "event"
+  category: "restaurant" | "activity" | "event"
   placeId?: string
   preferenceScore?: number
   isEmpty?: boolean
@@ -54,10 +55,20 @@ export type PlaceResult = {
   photos?: string[]
 }
 
+// Helper function to extract raw Google Place ID from prefixed IDs
+export const extractRawGooglePlaceId = (id: string): string => {
+  if (id.startsWith('google-')) {
+    return id.split('-').slice(2).join('-') // Remove 'google-category-' prefix
+  }
+  if (id.startsWith('yelp-')) {
+    return id.replace('yelp-', '') // Remove 'yelp-' prefix
+  }
+  return id
+}
+
 export type SearchResults = {
   restaurant?: PlaceResult
   activity?: PlaceResult
-  outdoor?: PlaceResult
   event?: PlaceResult
 }
 
@@ -92,7 +103,6 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
     const results: SearchResults = {
       restaurant: undefined,
       activity: undefined,
-      outdoor: undefined,
       event: undefined
     }
 
@@ -194,49 +204,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
 
 
 
-    // Search for outdoor activities if the filter is enabled
-    if (validParams.filters.outdoors) {
-      try {
-        // Use the updated Places API v1 format
-        const outdoorActivities = await searchGooglePlaces(
-          `parks in ${sanitizedCity}`,
-          "park",
-          undefined,
-          5000,
-          priceLevel,
-          priceLevel,
-          20
-        )
 
-        console.log(`Found ${outdoorActivities.length} parks in ${sanitizedCity}`)
-
-        if (outdoorActivities.length > 0) {
-          // Filter out excluded IDs
-          const filteredOutdoorActivities = outdoorActivities.filter(outdoorActivity => {
-            const placeId = outdoorActivity.id || outdoorActivity.name || ''
-            return !validParams.excludeIds?.includes(placeId)
-          })
-          
-          if (filteredOutdoorActivities.length > 0) {
-            const randomIndex = Math.floor(Math.random() * Math.min(filteredOutdoorActivities.length, 5))
-            const outdoorActivity = filteredOutdoorActivities[randomIndex]
-            console.log(
-              `Selected outdoor activity: ${outdoorActivity.displayName?.text || outdoorActivity.name}, ${outdoorActivity.formattedAddress}`,
-            )
-            results.outdoor = convertGooglePlaceToResult(outdoorActivity, "outdoor")
-          } else {
-            console.warn(`No new outdoor activities found (all excluded) in ${sanitizedCity}, using fallback`)
-            results.outdoor = createFallbackPlace(sanitizedCity, "outdoor", validParams.priceRange)
-          }
-        } else {
-          console.warn(`No outdoor activities found in ${sanitizedCity}, using fallback`)
-          results.outdoor = createFallbackPlace(sanitizedCity, "outdoor", validParams.priceRange)
-        }
-      } catch (error) {
-        console.error("Error fetching outdoor activities:", error)
-        results.outdoor = createFallbackPlace(sanitizedCity, "outdoor", validParams.priceRange)
-      }
-    }
 
     if (Object.keys(results).length === 0) {
       throw new Error("No results found. Try different filters or another city.")
@@ -259,7 +227,7 @@ export async function searchPlaces(params: z.infer<typeof searchParamsSchema>): 
 // Enhanced helper function to convert Google Place to our result format
 function convertGooglePlaceToResult(
   place: GooglePlace,
-  category: "restaurant" | "activity" | "outdoor" | "event",
+  category: "restaurant" | "activity" | "event",
 ): PlaceResult {
   // Only use real photos, no fallbacks
   let photoUrl: string | undefined = undefined
@@ -275,7 +243,7 @@ function convertGooglePlaceToResult(
     rating: place.rating || 4.0,
     address: place.formattedAddress || "Address not available",
     price: place.priceLevel || 2,
-    isOutdoor: category === "outdoor",
+    isOutdoor: false, // Removed outdoor category
     photoUrl, // Will be undefined if no real photo
     openNow: place.currentOpeningHours?.openNow || place.regularOpeningHours?.openNow || undefined,
     category,
@@ -297,14 +265,12 @@ function getRandomImage(images: string[]): string {
 }
 
 // Helper function to get a random image for a category
-function getRandomImageForCategory(category: "restaurant" | "activity" | "outdoor" | "event"): string {
+function getRandomImageForCategory(category: "restaurant" | "activity" | "event"): string {
   switch (category) {
     case "restaurant":
       return getRandomImage(restaurantImages)
     case "activity":
       return getRandomImage(activityImages)
-    case "outdoor":
-      return getRandomImage(outdoorImages)
     case "event":
       return getRandomImage(eventImages)
     default:
@@ -315,7 +281,7 @@ function getRandomImageForCategory(category: "restaurant" | "activity" | "outdoo
 // Helper function to create a fallback place
 function createFallbackPlace(
   city: string,
-  type: "restaurant" | "activity" | "outdoor" | "event",
+  type: "restaurant" | "activity" | "event",
   priceRange = 0,
 ): PlaceResult {
   const price = priceRange || Math.floor(Math.random() * 3) + 1
@@ -333,10 +299,6 @@ function createFallbackPlace(
       name = `${getRandomActivityName()} in ${city}`
       address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
       break
-    case "outdoor":
-      name = `${getRandomParkName()} in ${city}`
-      address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
-      break
     case "event":
       name = `${getRandomEventName()} in ${city}`
       address = `${Math.floor(Math.random() * 999) + 1} ${getRandomStreetName()}, ${city}`
@@ -352,7 +314,7 @@ function createFallbackPlace(
     rating,
     address,
     price,
-    isOutdoor: type === "outdoor",
+    isOutdoor: false, // Removed outdoor category
     // photoUrl: getRandomImageForCategory(type), // Removed fallback image
     openNow: Math.random() > 0.2, // 80% chance of being open
     category: type,
@@ -387,13 +349,7 @@ const eventImages = [
   "https://images.unsplash.com/photo-1583912267550-3ed0991b8e33?q=80&w=600&auto=format&fit=crop", // Live performance
 ]
 
-const outdoorImages = [
-  "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=600&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?q=80&w=600&auto=format&fit=crop",
-]
+// Removed outdoor images and category
 
 // Fallback data for names
 function getRandomRestaurantName(): string {
@@ -432,17 +388,7 @@ function getRandomEventName(): string {
   return `${prefix} ${type} ${suffix}`.trim()
 }
 
-function getRandomParkName(): string {
-  const prefixes = ["The", "A", ""]
-  const types = ["City", "Central", "Riverside", "Mountain", "Valley", "Forest", "Community", "Memorial"]
-  const suffixes = ["Park", "Gardens", "Recreation Area", "Preserve", "Sanctuary", "Reserve", "Trail", "Path"]
-
-  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)]
-  const type = types[Math.floor(Math.random() * types.length)]
-  const suffix = suffixes[Math.floor(Math.random() * suffixes.length)]
-
-  return `${prefix} ${type} ${suffix}`.trim()
-}
+// removed park fallback name generator
 
 function getRandomStreetName(): string {
   const streets = [
@@ -467,7 +413,7 @@ function getRandomStreetName(): string {
 }
 
 export async function refreshPlace(
-  type: "restaurant" | "activity" | "outdoor" | "event",
+  type: "restaurant" | "activity" | "event",
   city: string,
   placeId?: string,
   priceRange = 0,
@@ -495,10 +441,7 @@ export async function refreshPlace(
         searchTerm = `attractions in ${sanitizedCity}`
         placeType = "tourist_attraction"
         break
-      case "outdoor":
-        searchTerm = `parks in ${sanitizedCity}`
-        placeType = "park"
-        break
+      // removed outdoor
       case "event":
         searchTerm = `events in ${sanitizedCity}`
         placeType = "event_venue"
@@ -533,13 +476,13 @@ export async function refreshPlace(
           console.log(
             `Selected ${type} for refresh: ${selectedPlace.displayName?.text || selectedPlace.name}, ${selectedPlace.formattedAddress}`,
           )
-          return convertGooglePlaceToResult(filteredPlaces[randomIndex], type)
+      return convertGooglePlaceToResult(filteredPlaces[randomIndex], type as any)
         }
       }
 
       // Fall back to generated data if no places were found
       console.warn(`No ${type} places found for ${sanitizedCity}, using fallback`)
-      return createFallbackPlace(sanitizedCity, type, priceRange)
+      return createFallbackPlace(sanitizedCity, type as any, priceRange)
     } catch (error) {
       console.error(`Error with Google Places API, using fallback data for ${type}:`, error)
       return createFallbackPlace(sanitizedCity, type, priceRange)
@@ -549,75 +492,62 @@ export async function refreshPlace(
 
     // Return fallback data on error
     const sanitizedCity = sanitizeInput(city)
-    return createFallbackPlace(sanitizedCity, type, priceRange)
+    return createFallbackPlace(sanitizedCity, type as any, priceRange)
   }
 } 
 
-// New function specifically for explore feature - gets BALANCED venues per category
-export async function searchPlacesForExplore(params: {
+// NEW: Cost-effective explore function using only free APIs
+export async function searchPlacesForExploreFree(params: {
   city: string
   placeId?: string
   maxResults?: number
   excludeIds?: string[]
-  discoveryMode?: boolean // New parameter for expanded discovery
+  discoveryMode?: boolean
+  category?: string
 }): Promise<PlaceResult[]> {
   try {
-    const { city, placeId, maxResults = 20, excludeIds = [], discoveryMode = false } = params
+    const { city, placeId, maxResults = 20, excludeIds = [], discoveryMode = false, category } = params
     
     // Apply rate limiting - optimized for cost savings
     const userIp = "user-ip"
-    if (!checkRateLimit(`explore-${userIp}`, 150, 60000)) { // Reduced from 200 to 150
+    if (!checkRateLimit(`explore-free-${userIp}`, 200, 60000)) {
       throw new Error("Rate limit exceeded. Please try again later.")
     }
 
     // Sanitize city input
     const sanitizedCity = sanitizeInput(city)
     
-    console.log(`Searching for BALANCED explore venues in ${sanitizedCity}, max: ${maxResults}`)
+    console.log(`Searching for FREE explore venues in ${sanitizedCity}, max: ${maxResults}${isTestMode() ? ' [TEST MODE]' : ''}`)
     
-    // **BALANCED APPROACH**: Divide maxResults evenly across all venue types
-    const categoriesPerType = Math.floor(maxResults / 4) // 4 categories: restaurant, activity, outdoor, event
-    const remainder = maxResults % 4
-    
-    // Distribute any remainder across categories
+    // **BALANCED APPROACH with real-only sources**: Divide maxResults across restaurant/activity/event
+    const categoriesPerType = Math.floor(maxResults / 3)
+    const remainder = maxResults % 3
     const targetCounts = {
       restaurants: categoriesPerType + (remainder > 0 ? 1 : 0),
-      activities: categoriesPerType + (remainder > 1 ? 1 : 0), 
-      outdoor: categoriesPerType + (remainder > 2 ? 1 : 0),
+      activities: categoriesPerType + (remainder > 1 ? 1 : 0),
       events: categoriesPerType
     }
     
-    console.log(`Target balance: ${targetCounts.restaurants} restaurants, ${targetCounts.activities} activities, ${targetCounts.outdoor} outdoor, ${targetCounts.events} events`)
+    console.log(`Target balance: ${targetCounts.restaurants} restaurants, ${targetCounts.activities} activities, ${targetCounts.events} events`)
     
     const allVenues: PlaceResult[] = []
     
-    // Helper function to extract raw Google Place ID from prefixed IDs
-    const extractRawGooglePlaceId = (id: string): string => {
-      if (id.startsWith('google-')) {
-        return id.split('-').slice(2).join('-') // Remove 'google-category-' prefix
-      }
-      return id
-    }
-
-    // Get raw Google Place IDs from excludeIds for proper filtering
+    // Get raw IDs from excludeIds for proper filtering
     const excludedRawIds = excludeIds.map(extractRawGooglePlaceId)
     
-    // Keep track of all raw Google Place IDs we've seen to prevent cross-category duplicates
-    const seenRawIds = new Set<string>(excludedRawIds)
-    
-    // Also track venue names to prevent Yelp/Google duplicates like "Meritage"
+    // Keep track of venue names to prevent duplicates
     const seenVenueNames = new Set<string>()
 
-    // 1. RESTAURANTS (balanced amount)
+    // 1. RESTAURANTS (Yelp only - free, no fallbacks)
     try {
       const restaurantVenues: PlaceResult[] = []
       
-      // Get Yelp restaurants first (they usually have better photos)
+      // Get Yelp restaurants (free API)
       try {
         const { fetchYelpRestaurants } = await import("@/lib/yelp-api")
         const yelpRestaurants = await fetchYelpRestaurants(
           sanitizedCity, 
-          Math.ceil(targetCounts.restaurants * 1.5), // Reduced from 2x to 1.5x to save costs
+          targetCounts.restaurants * 2, // Get more to filter
           0,
           excludeIds
         )
@@ -629,46 +559,7 @@ export async function searchPlacesForExplore(params: {
         
         restaurantVenues.push(...yelpRestaurants.slice(0, targetCounts.restaurants))
       } catch (error) {
-        console.log("Yelp API not available, using Google Places only")
-      }
-
-      // Fill remaining slots with Google Places restaurants
-      const remainingRestaurantSlots = targetCounts.restaurants - restaurantVenues.length
-      if (remainingRestaurantSlots > 0) {
-        try {
-          const googleRestaurants = await searchGooglePlaces(
-            `restaurants in ${sanitizedCity}`,
-            "restaurant",
-            undefined,
-            20000, // Reduced from 25000 to 20000 to save costs
-            undefined,
-            undefined,
-            50 // Pass maxResults parameter for pagination
-          )
-          
-          const filteredGoogleRestaurants = googleRestaurants
-            .filter(r => {
-              if (seenRawIds.has(r.id)) return false
-              
-              const restaurantName = r.displayName?.text || r.name || ''
-              for (const seenName of seenVenueNames) {
-                if (areVenueNamesSimilar(restaurantName, seenName)) {
-                  return false
-                }
-              }
-              return true
-            })
-            .slice(0, remainingRestaurantSlots)
-            .map(r => {
-              seenRawIds.add(r.id)
-              seenVenueNames.add(normalizeVenueName(r.displayName?.text || r.name || ''))
-              return convertGooglePlaceToResult(r, "restaurant")
-            })
-          
-          restaurantVenues.push(...filteredGoogleRestaurants)
-        } catch (error) {
-          console.log("Google Places API unavailable for restaurants")
-        }
+        console.log("Yelp API not available, skipping restaurants (no fallbacks)")
       }
       
       allVenues.push(...restaurantVenues)
@@ -677,121 +568,22 @@ export async function searchPlacesForExplore(params: {
       console.error("Error fetching restaurants for explore:", error)
     }
 
-    // 2. ACTIVITIES (balanced amount)
+    // 2. ACTIVITIES (Yelp only - free, no fallbacks)
     try {
-      const activityVenues: PlaceResult[] = []
-      
-      const activityQueries = [
-        `things to do in ${sanitizedCity}`,
-        `attractions in ${sanitizedCity}`,
-        `museums in ${sanitizedCity}`,
-        `entertainment in ${sanitizedCity}`,
-        `art galleries in ${sanitizedCity}`,
-      ]
-      
-      for (const query of activityQueries) {
-        if (activityVenues.length >= targetCounts.activities) break
-        
-        try {
-          const batch = await searchGooglePlaces(
-            query,
-            "tourist_attraction",
-            undefined,
-            20000, // Reduced from 25000 to 20000 to save costs
-            undefined,
-            undefined,
-            50 // Pass maxResults parameter for pagination
-          )
-          
-          const filteredBatch = batch
-            .filter(a => {
-              if (seenRawIds.has(a.id)) return false
-              
-              const activityName = a.displayName?.text || a.name || ''
-              for (const seenName of seenVenueNames) {
-                if (areVenueNamesSimilar(activityName, seenName)) {
-                  return false
-                }
-              }
-              return true
-            })
-            .slice(0, targetCounts.activities - activityVenues.length)
-            .map(a => {
-              seenRawIds.add(a.id)
-              seenVenueNames.add(normalizeVenueName(a.displayName?.text || a.name || ''))
-              return convertGooglePlaceToResult(a, "activity")
-            })
-          
-          activityVenues.push(...filteredBatch)
-        } catch (error) {
-          console.log(`Error fetching activities for query: ${query}`)
-        }
-      }
-      
-      allVenues.push(...activityVenues)
-      console.log(`Added ${activityVenues.length} activities (target: ${targetCounts.activities})`)
+      const { fetchYelpActivities } = await import("@/lib/yelp-api")
+      const activities = await fetchYelpActivities(
+        sanitizedCity,
+        targetCounts.activities * 2,
+        0,
+        excludeIds
+      )
+      allVenues.push(...activities.slice(0, targetCounts.activities))
+      console.log(`Added ${activities.length} activities (target kept: ${targetCounts.activities})`)
     } catch (error) {
       console.error("Error fetching activities for explore:", error)
     }
 
-    // 3. OUTDOOR VENUES (balanced amount)
-    try {
-      const outdoorVenues: PlaceResult[] = []
-      
-      const outdoorQueries = [
-        `parks in ${sanitizedCity}`,
-        `hiking trails in ${sanitizedCity}`,
-        `gardens in ${sanitizedCity}`,
-        `outdoor recreation in ${sanitizedCity}`,
-        `nature areas in ${sanitizedCity}`,
-      ]
-      
-      for (const query of outdoorQueries) {
-        if (outdoorVenues.length >= targetCounts.outdoor) break
-        
-        try {
-          const batch = await searchGooglePlaces(
-            query,
-            "park",
-            undefined,
-            25000, // Reduced from 30000 to 25000 to save costs
-            undefined,
-            undefined,
-            50 // Pass maxResults parameter for pagination
-          )
-          
-          const filteredBatch = batch
-            .filter(o => {
-              if (seenRawIds.has(o.id)) return false
-              
-              const outdoorName = o.displayName?.text || o.name || ''
-              for (const seenName of seenVenueNames) {
-                if (areVenueNamesSimilar(outdoorName, seenName)) {
-                  return false
-                }
-              }
-              return true
-            })
-            .slice(0, targetCounts.outdoor - outdoorVenues.length)
-            .map(o => {
-              seenRawIds.add(o.id)
-              seenVenueNames.add(normalizeVenueName(o.displayName?.text || o.name || ''))
-              return convertGooglePlaceToResult(o, "outdoor")
-            })
-          
-          outdoorVenues.push(...filteredBatch)
-        } catch (error) {
-          console.log(`Error fetching outdoor venues for query: ${query}`)
-        }
-      }
-      
-      allVenues.push(...outdoorVenues)
-      console.log(`Added ${outdoorVenues.length} outdoor venues (target: ${targetCounts.outdoor})`)
-    } catch (error) {
-      console.error("Error fetching outdoor venues for explore:", error)
-    }
-
-    // 4. EVENTS (balanced amount)
+    // 3. EVENTS (Events API - free, no fallbacks)
     try {
       const eventVenues: PlaceResult[] = []
       
@@ -809,25 +601,51 @@ export async function searchPlacesForExplore(params: {
       console.error("Error fetching events for explore:", error)
     }
 
+    // Optional category server-side filtering
+    const filteredByCategory = category && category !== 'all'
+      ? allVenues.filter(v => v.category === (category === 'restaurants' ? 'restaurant' : category === 'activities' ? 'activity' : category === 'events' ? 'event' : category))
+      : allVenues
+
     // Shuffle the results to mix categories instead of grouping by type
-    const shuffledVenues = allVenues.sort(() => Math.random() - 0.5)
+    const shuffledVenues = filteredByCategory.sort(() => Math.random() - 0.5)
     
-    console.log(`Returning ${shuffledVenues.length} BALANCED venues for explore:`)
+    console.log(`Returning ${shuffledVenues.length} FREE venues for explore:`)
     console.log(`- Restaurants: ${shuffledVenues.filter(v => v.category === 'restaurant').length}`)
     console.log(`- Activities: ${shuffledVenues.filter(v => v.category === 'activity').length}`)
-    console.log(`- Outdoor: ${shuffledVenues.filter(v => v.category === 'outdoor').length}`)
     console.log(`- Events: ${shuffledVenues.filter(v => v.category === 'event').length}`)
     
-    return shuffledVenues.slice(0, maxResults)
+    return shuffledVenues.filter(v => !excludedRawIds.includes(extractRawGooglePlaceId(v.id))).slice(0, maxResults)
 
   } catch (error) {
-    console.error("Error in searchPlacesForExplore:", error)
+    console.error("Error in searchPlacesForExploreFree:", error)
     throw error
   }
-} 
+}
 
 export async function searchTrendingVenues(location: string, limit: number = 10) {
   const venues = []
+
+  // In test mode, return mock trending items without hitting paid APIs
+  if (isTestMode()) {
+    for (let i = 0; i < limit; i++) {
+      const type = i % 3 === 0 ? 'event' : i % 3 === 1 ? 'restaurant' : 'activity'
+      venues.push({
+        id: `trending-mock-${type}-${i}`,
+        name: type === 'event' ? `Mock Concert ${i + 1}` : type === 'restaurant' ? `Mock Trending Restaurant ${i + 1}` : `Mock Trending Activity ${i + 1}`,
+        address: `${sanitizeInput(location)} ${type} spot ${i + 1}`,
+        rating: 4.6,
+        price: type === 'restaurant' ? 2 : 3,
+        category: type as 'event' | 'restaurant' | 'activity',
+        photoUrl: type === 'event'
+          ? 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop'
+          : type === 'restaurant'
+            ? 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=600&auto=format&fit=crop'
+            : 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=600&auto=format&fit=crop',
+        openNow: true,
+      })
+    }
+    return venues.slice(0, limit)
+  }
   
   try {
     // Get trending events (recent and popular)
@@ -870,14 +688,7 @@ export async function searchTrendingVenues(location: string, limit: number = 10)
       console.log('Google Places API unavailable for nightlife trending')
     }
 
-    // Get trending outdoor spots (only if Google Places is available)
-    try {
-      const trendingOutdoor = await searchGooglePlaces(`parks in ${location}`, 'park', undefined, undefined, undefined, undefined, 20)
-      const highRatedOutdoor = trendingOutdoor.filter(place => place.rating && place.rating >= 4.4)
-      venues.push(...highRatedOutdoor.slice(0, 1).map(place => convertGooglePlaceToResult(place, 'outdoor')))
-    } catch (error) {
-      console.log('Google Places API unavailable for outdoor trending')
-    }
+    // Removed outdoor category
 
     // If we have very few venues, add more fallback venues
     if (venues.length < 3) {
@@ -967,18 +778,7 @@ function getFallbackTrendingVenues(location: string, limit: number) {
       trending: true,
       trending_reason: 'Food hotspot'
     },
-    {
-      id: 'trending-5',
-      name: 'Riverside Walking Trail',
-      category: 'outdoor',
-      rating: 4.4,
-      priceLevel: 0,
-      image: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&h=300&fit=crop',
-      description: 'Scenic trail perfect for evening walks',
-      location: location,
-      trending: true,
-      trending_reason: 'Trending now'
-    }
+    // Removed outdoor fallback item
   ]
 
   return fallbackVenues.slice(0, limit)
@@ -1075,9 +875,10 @@ export async function searchSpecificVenues(params: {
   excludeIds?: string[]
   discoveryMode?: boolean // New parameter for expanded discovery
   categoryFilter?: string // New parameter for category-specific search
+  offset?: number // New parameter for pagination offset
 }): Promise<PlaceResult[]> {
   try {
-           const { city, searchQuery, maxResults = 200, excludeIds = [], discoveryMode = false, categoryFilter = '' } = params
+           const { city, searchQuery, maxResults = 50, excludeIds = [], discoveryMode = false, categoryFilter = '', offset = 0 } = params
     
     // Apply rate limiting
     const userIp = "user-ip"
@@ -1096,8 +897,8 @@ export async function searchSpecificVenues(params: {
     
     // Enhanced search queries for discovery mode
     const searchQueries = discoveryMode ? 
-      generateDiscoveryQueries(sanitizedQuery, sanitizedCity) : 
-      generateFoodSearchQueries(sanitizedQuery, sanitizedCity)
+      generateDiscoveryQueries(sanitizedQuery, sanitizedCity, offset) : 
+      generateFoodSearchQueries(sanitizedQuery, sanitizedCity, offset)
     
     console.log(`Generated ${searchQueries.length} search queries:`, searchQueries)
     
@@ -1117,13 +918,49 @@ export async function searchSpecificVenues(params: {
         
         console.log(`Google Places returned ${places.length} raw results for "${query}"`)
         
+        // Debug: Log filtering statistics
+        const beforeFiltering = places.length
+        const afterExactIdFilter = places.filter(place => !excludeIds.includes(place.id)).length
+        const isLargeExcludeList = excludeIds.length > 100
+        
+        console.log(`🔍 Filtering debug for "${query}":`, {
+          beforeFiltering,
+          afterExactIdFilter,
+          excludeIdsLength: excludeIds.length,
+          isLargeExcludeList,
+          filteredOutByExactId: beforeFiltering - afterExactIdFilter
+        })
+        
         // Convert and categorize results
         const searchResults = places
-          .filter(place => !excludeIds.includes(place.id))
+          .filter(place => {
+            // If we have too many excludeIds, be more lenient with filtering
+            const isLargeExcludeList = excludeIds.length > 100
+            
+            // Check if this place ID is in excludeIds (exact match)
+            if (excludeIds.includes(place.id)) return false
+            
+            // For large exclude lists, only do basic filtering to avoid removing too many results
+            if (isLargeExcludeList) {
+              // Only check for exact ID matches, skip complex raw ID checking
+              return true
+            }
+            
+            // Check if the raw place ID (without category prefix) is in excludeIds
+            // We need to check all possible category prefixes
+            const excludedRawIds = excludeIds.map(extractRawGooglePlaceId)
+            const possibleCategories = ['restaurant', 'activity', 'event']
+            for (const cat of possibleCategories) {
+              const rawPlaceId = extractRawGooglePlaceId(`google-${cat}-${place.id}`)
+              if (excludedRawIds.includes(rawPlaceId)) return false
+            }
+            
+            return true
+          })
           .slice(0, Math.min(maxResults * 4, 400)) // Increase results for better coverage
           .map(place => {
             // Determine category based on place types or name
-            let category: "restaurant" | "activity" | "outdoor" | "event" = "activity"
+            let category: "restaurant" | "activity" | "event" = "activity"
             
             const name = (place.displayName?.text || place.name || '').toLowerCase()
             const types = place.types || []
@@ -1132,9 +969,6 @@ export async function searchSpecificVenues(params: {
                 name.includes('restaurant') || name.includes('cafe') || name.includes('bar') || name.includes('diner') ||
                 name.includes('grill') || name.includes('kitchen') || name.includes('bistro') || name.includes('eatery')) {
               category = "restaurant"
-            } else if (types.includes('park') || types.includes('campground') || 
-                       name.includes('park') || name.includes('trail') || name.includes('garden') || name.includes('beach')) {
-              category = "outdoor"
             } else if (name.includes('concert') || name.includes('theater') || name.includes('show') || 
                        name.includes('festival') || name.includes('event')) {
               category = "event"
@@ -1149,7 +983,6 @@ export async function searchSpecificVenues(params: {
               const categoryMap: Record<string, string> = {
                 'restaurants': 'restaurant',
                 'activities': 'activity', 
-                'outdoors': 'outdoor',
                 'events': 'event'
               }
               const expectedCategory = categoryMap[categoryFilter] || categoryFilter
@@ -1170,26 +1003,36 @@ export async function searchSpecificVenues(params: {
     }
     
     // Enhanced Yelp search for restaurants or when category filter is restaurants
-    if (categoryFilter === 'restaurants' || discoveryMode || sanitizedQuery.toLowerCase().includes('restaurant') || 
+    const shouldSearchYelp = categoryFilter === 'restaurants' || discoveryMode || sanitizedQuery.toLowerCase().includes('restaurant') || 
         sanitizedQuery.toLowerCase().includes('food') || 
         sanitizedQuery.toLowerCase().includes('cafe') ||
         sanitizedQuery.toLowerCase().includes('bar') ||
         sanitizedQuery.toLowerCase().includes('burger') ||
         sanitizedQuery.toLowerCase().includes('pizza') ||
-        sanitizedQuery.toLowerCase().includes('coffee')) {
+        sanitizedQuery.toLowerCase().includes('coffee')
+    
+    console.log(`🔍 Yelp search condition check:`, {
+      categoryFilter,
+      discoveryMode,
+      sanitizedQuery,
+      shouldSearchYelp
+    })
+    
+    if (shouldSearchYelp) {
       try {
         const { fetchYelpRestaurants } = await import("@/lib/yelp-api")
         const yelpQueries = discoveryMode ? 
-          generateYelpDiscoveryQueries(sanitizedQuery, sanitizedCity) : 
+          generateYelpDiscoveryQueries(sanitizedQuery, sanitizedCity, offset) : 
           [`${sanitizedQuery} ${sanitizedCity}`]
         
         for (const query of yelpQueries) {
           console.log(`Searching Yelp for: "${query}"`)
           const yelpResults = await fetchYelpRestaurants(
-            query, 
+            sanitizedCity, // Pass city as location parameter
             Math.min(maxResults * 4, 200), // Increase results to get more options
-            0,
-            excludeIds
+            offset, // Use the offset parameter for pagination
+            excludeIds,
+            query // Pass the search query as term parameter
           )
           
           console.log(`Yelp returned ${yelpResults.length} raw results for "${query}"`)
@@ -1243,6 +1086,17 @@ export async function searchSpecificVenues(params: {
     }
     
     // Enhanced events search for events or when category filter is events
+    console.log(`🔍 Events search condition check:`, {
+      categoryFilter,
+      discoveryMode,
+      sanitizedQuery,
+      shouldSearchEvents: categoryFilter === 'events' || discoveryMode || sanitizedQuery.toLowerCase().includes('event') || 
+        sanitizedQuery.toLowerCase().includes('concert') || 
+        sanitizedQuery.toLowerCase().includes('show') ||
+        sanitizedQuery.toLowerCase().includes('theater') ||
+        sanitizedQuery.toLowerCase().includes('festival')
+    })
+    
     if (categoryFilter === 'events' || discoveryMode || sanitizedQuery.toLowerCase().includes('event') || 
         sanitizedQuery.toLowerCase().includes('concert') || 
         sanitizedQuery.toLowerCase().includes('show') ||
@@ -1269,7 +1123,6 @@ export async function searchSpecificVenues(params: {
               const categoryMap: Record<string, string> = {
                 'restaurants': 'restaurant',
                 'activities': 'activity', 
-                'outdoors': 'outdoor',
                 'events': 'event'
               }
               const expectedCategory = categoryMap[categoryFilter] || categoryFilter
@@ -1291,19 +1144,75 @@ export async function searchSpecificVenues(params: {
       return acc
     }, {} as Record<string, number>))
     
-    // Remove duplicates based on name similarity
-    const uniqueResults = allResults.filter((result, index, self) => 
-      index === self.findIndex(other => 
-        other.name.toLowerCase() === result.name.toLowerCase() &&
-        other.address === result.address
-      )
-    )
+    // Log excludeIds being used for deduplication
+    console.log(`Using ${excludeIds.length} excludeIds for deduplication:`, excludeIds.slice(0, 3))
+    console.log(`ExcludeIds raw IDs:`, excludeIds.map(extractRawGooglePlaceId).slice(0, 5))
+    
+    // Enhanced duplicate prevention with multiple strategies
+    const uniqueResults = allResults.filter((result, index, self) => {
+      // Check if this result is a duplicate of any previous result
+      return index === self.findIndex(other => {
+        // Strategy 1: Exact name and address match
+        if (other.name.toLowerCase() === result.name.toLowerCase() && 
+            other.address === result.address) {
+          return true
+        }
+        
+        // Strategy 2: Similar names (normalized) with same address
+        const normalizedName1 = normalizeVenueName(other.name)
+        const normalizedName2 = normalizeVenueName(result.name)
+        if (normalizedName1 === normalizedName2 && other.address === result.address) {
+          return true
+        }
+        
+        // Strategy 3: High similarity score with same address
+        if (areVenueNamesSimilar(other.name, result.name) && other.address === result.address) {
+          return true
+        }
+        
+        // Strategy 4: Same place ID (for Google Places results) - CRITICAL FIX
+        if (other.placeId && result.placeId && other.placeId === result.placeId) {
+          return true
+        }
+        
+        // Strategy 5: Same raw place ID regardless of category prefix (NEW)
+        const otherRawId = extractRawGooglePlaceId(other.id)
+        const resultRawId = extractRawGooglePlaceId(result.id)
+        if (otherRawId && resultRawId && otherRawId === resultRawId) {
+          return true
+        }
+        
+        return false
+      })
+    })
     
     console.log(`Total results after deduplication: ${uniqueResults.length}`)
     console.log(`Results by category after deduplication:`, uniqueResults.reduce((acc, r) => {
       acc[r.category] = (acc[r.category] || 0) + 1
       return acc
     }, {} as Record<string, number>))
+    
+    // Log any potential duplicates that might have slipped through
+    const duplicateCheck = uniqueResults.reduce((acc, venue) => {
+      const key = `${venue.name.toLowerCase()}-${venue.address}`
+      if (acc[key]) {
+        console.warn(`🚨 DUPLICATE DETECTED: ${venue.name} at ${venue.address}`)
+        console.warn(`   Original ID: ${acc[key].venue.id}`)
+        console.warn(`   Duplicate ID: ${venue.id}`)
+        console.warn(`   Original Raw ID: ${extractRawGooglePlaceId(acc[key].venue.id)}`)
+        console.warn(`   Duplicate Raw ID: ${extractRawGooglePlaceId(venue.id)}`)
+        acc[key].count++
+      } else {
+        acc[key] = { venue, count: 1 }
+      }
+      return acc
+    }, {} as Record<string, { venue: any, count: number }>)
+    
+    const actualDuplicates = Object.values(duplicateCheck).filter(item => item.count > 1)
+    if (actualDuplicates.length > 0) {
+      console.warn(`🚨 Found ${actualDuplicates.length} duplicates that slipped through:`, 
+        actualDuplicates.map(d => `${d.venue.name} (${d.count} instances, IDs: ${d.venue.id})`))
+    }
     
     // Enhanced relevance scoring and sorting
     const scoredResults = uniqueResults.map(result => {
@@ -1384,7 +1293,7 @@ export async function searchSpecificVenues(params: {
       } else if (searchTerm.includes('park') || searchTerm.includes('museum') || 
                  searchTerm.includes('gallery') || searchTerm.includes('theater') ||
                  searchTerm.includes('bowling') || searchTerm.includes('golf')) {
-        if (category === 'activity' || category === 'outdoor') {
+        if (category === 'activity') {
           relevanceScore += 30
         } else if (category === 'event') {
           relevanceScore -= 10
@@ -1433,6 +1342,13 @@ export async function searchSpecificVenues(params: {
     
     console.log(`Final results before maxResults limit: ${finalResults.length}`)
     console.log(`Max results limit: ${maxResults}`)
+    
+    // If we don't have enough results, log a warning but don't do recursive fallback
+    if (finalResults.length < maxResults * 0.3 && excludeIds.length > 0) {
+      console.log(`⚠️ Not enough results (${finalResults.length}) - excludeIds might be too restrictive`)
+      console.log(`Consider reducing excludeIds or expanding search area`)
+    }
+    
     console.log(`Returning ${Math.min(finalResults.length, maxResults)} final results for "${sanitizedQuery}"`)
     console.log(`Top 3 results:`, finalResults.slice(0, 3).map(r => `${r.name} (${r.category}, score: ${scoredResults.find(s => s.id === r.id)?.relevanceScore})`))
     return finalResults.slice(0, maxResults)
@@ -1443,7 +1359,7 @@ export async function searchSpecificVenues(params: {
 }
 
 // Helper function to generate expanded discovery queries
-function generateDiscoveryQueries(baseQuery: string, city: string): string[] {
+function generateDiscoveryQueries(baseQuery: string, city: string, offset: number = 0): string[] {
   const queries = [`${baseQuery} in ${city}`]
   
   // Add related terms and synonyms
@@ -1464,11 +1380,34 @@ function generateDiscoveryQueries(baseQuery: string, city: string): string[] {
     queries.push(`${variation} in ${city}`)
   }
   
-  return queries.slice(0, 8) // Limit to prevent too many API calls
+  // Add offset-based variations to get more diversity
+  const offsetVariations = [
+    `best ${baseQuery}`,
+    `popular ${baseQuery}`,
+    `top rated ${baseQuery}`,
+    `trending ${baseQuery}`,
+    `local ${baseQuery}`,
+    `authentic ${baseQuery}`,
+    `famous ${baseQuery}`,
+    `hidden gem ${baseQuery}`
+  ]
+  
+  // Use offset to cycle through different variations
+  const variationIndex = Math.floor(offset / 50) % offsetVariations.length
+  const selectedVariations = offsetVariations.slice(variationIndex, variationIndex + 2)
+  if (selectedVariations.length < 2) {
+    selectedVariations.push(...offsetVariations.slice(0, 2 - selectedVariations.length))
+  }
+  
+  for (const variation of selectedVariations) {
+    queries.push(`${variation} in ${city}`)
+  }
+  
+  return queries.slice(0, 10) // Allow more queries for better diversity
 }
 
 // Helper function to generate comprehensive food search queries
-function generateFoodSearchQueries(baseQuery: string, city: string): string[] {
+function generateFoodSearchQueries(baseQuery: string, city: string, offset: number = 0): string[] {
   const queries = [`${baseQuery} in ${city}`]
   const searchTerm = baseQuery.toLowerCase()
   
@@ -1509,29 +1448,78 @@ function generateFoodSearchQueries(baseQuery: string, city: string): string[] {
     for (const area of nearbyAreas.slice(0, 3)) {
       queries.push(`restaurants in ${area}`)
     }
+    
+    // Add offset-based food variations
+    const foodVariations = [
+      'casual dining',
+      'fine dining', 
+      'fast casual',
+      'family restaurants',
+      'date night restaurants',
+      'romantic restaurants',
+      'outdoor dining',
+      'rooftop restaurants',
+      'wine bars',
+      'craft beer bars',
+      'cocktail bars',
+      'dive bars',
+      'sports bars',
+      'live music restaurants',
+      'jazz restaurants',
+      'pizza places',
+      'burger joints',
+      'taco places',
+      'sushi restaurants',
+      'steakhouse'
+    ]
+    
+    // Use offset to cycle through different food variations
+    const variationIndex = Math.floor(offset / 40) % foodVariations.length
+    const selectedVariations = foodVariations.slice(variationIndex, variationIndex + 3)
+    if (selectedVariations.length < 3) {
+      selectedVariations.push(...foodVariations.slice(0, 3 - selectedVariations.length))
+    }
+    
+    for (const variation of selectedVariations) {
+      queries.push(`${variation} in ${city}`)
+    }
   } else {
     // For non-food searches, just use the original query
     queries.push(`${baseQuery} in ${city}`)
   }
   
-  return queries.slice(0, 10) // Allow more queries for food searches
+  return queries.slice(0, 15) // Allow more queries for food searches
 }
 
 // Helper function to generate Yelp discovery queries
-function generateYelpDiscoveryQueries(baseQuery: string, city: string): string[] {
+function generateYelpDiscoveryQueries(baseQuery: string, city: string, offset: number = 0): string[] {
   const queries = [`${baseQuery} ${city}`]
   
   // Add cuisine types for restaurant searches
   if (baseQuery.toLowerCase().includes('restaurant') || baseQuery.toLowerCase().includes('food')) {
-    const cuisines = ['Italian', 'Mexican', 'Japanese', 'Chinese', 'American', 'French', 'Thai', 'Indian', 'Mediterranean', 'Greek', 'Vietnamese', 'Korean']
-    for (const cuisine of cuisines.slice(0, 4)) {
+    const cuisines = ['Italian', 'Mexican', 'Japanese', 'Chinese', 'American', 'French', 'Thai', 'Indian', 'Mediterranean', 'Greek', 'Vietnamese', 'Korean', 'Spanish', 'Brazilian', 'Peruvian', 'Ethiopian', 'Lebanese', 'Turkish', 'Russian', 'German']
+    
+    // Use offset to cycle through different cuisines
+    const cuisineIndex = Math.floor(offset / 50) % cuisines.length
+    const selectedCuisines = cuisines.slice(cuisineIndex, cuisineIndex + 4)
+    if (selectedCuisines.length < 4) {
+      selectedCuisines.push(...cuisines.slice(0, 4 - selectedCuisines.length))
+    }
+    
+    for (const cuisine of selectedCuisines) {
       queries.push(`${cuisine} restaurant ${city}`)
     }
   }
   
-  // Add meal types
-  const mealTypes = ['breakfast', 'lunch', 'dinner', 'brunch', 'dessert', 'coffee']
-  for (const meal of mealTypes.slice(0, 3)) {
+  // Add meal types with offset-based rotation
+  const mealTypes = ['breakfast', 'lunch', 'dinner', 'brunch', 'dessert', 'coffee', 'late night', 'happy hour', 'weekend brunch', 'date night']
+  const mealIndex = Math.floor(offset / 30) % mealTypes.length
+  const selectedMeals = mealTypes.slice(mealIndex, mealIndex + 3)
+  if (selectedMeals.length < 3) {
+    selectedMeals.push(...mealTypes.slice(0, 3 - selectedMeals.length))
+  }
+  
+  for (const meal of selectedMeals) {
     queries.push(`${meal} ${city}`)
   }
   
@@ -1553,10 +1541,7 @@ function getRelatedTerms(query: string): string[] {
     relatedTerms.push('attraction', 'museum', 'gallery', 'theater', 'cinema', 'bowling', 'arcade', 'escape room')
   }
   
-  // Outdoor-related terms
-  if (queryLower.includes('outdoor') || queryLower.includes('park') || queryLower.includes('nature')) {
-    relatedTerms.push('trail', 'garden', 'beach', 'lake', 'mountain', 'forest', 'wildlife', 'scenic')
-  }
+  // Removed outdoor-related terms
   
   // Event-related terms
   if (queryLower.includes('event') || queryLower.includes('concert') || queryLower.includes('show')) {
@@ -1653,4 +1638,162 @@ function calculateStringSimilarity(str1: string, str2: string): number {
   
   const maxLength = Math.max(str1.length, str2.length)
   return (maxLength - matrix[str2.length][str1.length]) / maxLength
+}
+
+// NEW: Cost-effective search for make-a-date functionality
+export async function searchSpecificVenuesCostEffective(params: {
+  city: string
+  searchQuery: string
+  maxResults?: number
+  excludeIds?: string[]
+  useGoogleAPI?: boolean // Only use Google API for specific searches
+}): Promise<PlaceResult[]> {
+  try {
+    const { city, searchQuery, maxResults = 20, excludeIds = [], useGoogleAPI = false } = params
+    
+    // Apply rate limiting
+    const userIp = "user-ip"
+    if (!checkRateLimit(`search-cost-effective-${userIp}`, 50, 60000)) {
+      throw new Error("Search rate limit exceeded. Please try again later.")
+    }
+
+    // Sanitize inputs
+    const sanitizedCity = sanitizeInput(city)
+    const sanitizedQuery = sanitizeInput(searchQuery)
+    
+    console.log(`Cost-effective search for "${sanitizedQuery}" in ${sanitizedCity}${useGoogleAPI ? ' (with Google API)' : ' (free APIs only)'}`)
+    
+    const allResults: PlaceResult[] = []
+    
+    // 1. Try Yelp first (free API) for restaurant searches
+    if (sanitizedQuery.toLowerCase().includes('restaurant') || 
+        sanitizedQuery.toLowerCase().includes('food') || 
+        sanitizedQuery.toLowerCase().includes('cafe') ||
+        sanitizedQuery.toLowerCase().includes('bar') ||
+        sanitizedQuery.toLowerCase().includes('dining')) {
+      try {
+        const { fetchYelpRestaurants } = await import("@/lib/yelp-api")
+        const yelpResults = await fetchYelpRestaurants(
+          sanitizedCity,
+          maxResults,
+          0,
+          excludeIds,
+          sanitizedQuery
+        )
+        
+        allResults.push(...yelpResults)
+        console.log(`Found ${yelpResults.length} Yelp results for "${sanitizedQuery}"`)
+      } catch (error) {
+        console.log("Yelp API not available for search")
+      }
+    }
+    
+    // 2. Try Events API (free) for event searches
+    if (sanitizedQuery.toLowerCase().includes('event') || 
+        sanitizedQuery.toLowerCase().includes('concert') || 
+        sanitizedQuery.toLowerCase().includes('show') ||
+        sanitizedQuery.toLowerCase().includes('theater') ||
+        sanitizedQuery.toLowerCase().includes('festival')) {
+      try {
+        const { fetchAllEvents } = await import("@/lib/events-api")
+        const eventResults = await fetchAllEvents(
+          sanitizedCity,
+          maxResults,
+          excludeIds
+        )
+        
+        // Filter events by search query
+        const filteredEvents = eventResults.filter(event => 
+          event.name.toLowerCase().includes(sanitizedQuery.toLowerCase())
+        )
+        
+        allResults.push(...filteredEvents)
+        console.log(`Found ${filteredEvents.length} event results for "${sanitizedQuery}"`)
+      } catch (error) {
+        console.log("Events API not available for search")
+      }
+    }
+    
+    // 3. Only use Google API if explicitly requested (for specific venue lookups)
+    if (useGoogleAPI && process.env.GOOGLE_API_KEY) {
+      try {
+        console.log(`Using Google API for specific venue search: "${sanitizedQuery}"`)
+        const places = await searchGooglePlaces(
+          `${sanitizedQuery} in ${sanitizedCity}`,
+          "establishment",
+          undefined,
+          10000,
+          undefined,
+          undefined,
+          maxResults
+        )
+        
+        // Convert and categorize results
+        const searchResults = places
+          .filter(place => !excludeIds.includes(place.id))
+          .map(place => {
+            // Determine category based on place types or name
+            let category: "restaurant" | "activity" | "event" = "activity"
+            
+            const name = (place.displayName?.text || place.name || '').toLowerCase()
+            const types = place.types || []
+            
+            if (types.includes('restaurant') || types.includes('food') || types.includes('meal_takeaway') || 
+                name.includes('restaurant') || name.includes('cafe') || name.includes('bar') || name.includes('diner') ||
+                name.includes('grill') || name.includes('kitchen') || name.includes('bistro') || name.includes('eatery')) {
+              category = "restaurant"
+            } else if (name.includes('concert') || name.includes('theater') || name.includes('show') || 
+                       name.includes('festival') || name.includes('event')) {
+              category = "event"
+            }
+            
+            return convertGooglePlaceToResult(place, category)
+          })
+        
+        allResults.push(...searchResults)
+        console.log(`Found ${searchResults.length} Google Places results for "${sanitizedQuery}"`)
+      } catch (error) {
+        console.error(`Error with Google Places API:`, error)
+      }
+    }
+    
+    // 4. If no results found, create fallback suggestions
+    if (allResults.length === 0) {
+      console.log(`No results found for "${sanitizedQuery}", creating fallback suggestions`)
+      
+      const fallbackSuggestions = [
+        createFallbackPlace(sanitizedCity, "restaurant", Math.floor(Math.random() * 3) + 1),
+        createFallbackPlace(sanitizedCity, "activity", Math.floor(Math.random() * 3) + 1),
+        createFallbackPlace(sanitizedCity, "event", Math.floor(Math.random() * 3) + 1)
+      ]
+      
+      // Customize fallback suggestions based on search query
+      fallbackSuggestions.forEach(suggestion => {
+        if (sanitizedQuery.toLowerCase().includes('restaurant') || sanitizedQuery.toLowerCase().includes('food')) {
+          suggestion.category = "restaurant"
+          suggestion.name = `${getRandomRestaurantName()} in ${sanitizedCity}`
+        } else if (sanitizedQuery.toLowerCase().includes('event') || sanitizedQuery.toLowerCase().includes('concert')) {
+          suggestion.category = "event"
+          suggestion.name = `${getRandomEventName()} in ${sanitizedCity}`
+        }
+      })
+      
+      allResults.push(...fallbackSuggestions)
+    }
+    
+    // Remove duplicates and return results
+    const uniqueResults = allResults.filter((result, index, self) => {
+      return index === self.findIndex(other => 
+        other.name.toLowerCase() === result.name.toLowerCase() && 
+        other.address === result.address
+      )
+    })
+    
+    console.log(`Returning ${uniqueResults.length} cost-effective search results for "${sanitizedQuery}"`)
+    return uniqueResults.slice(0, maxResults)
+    
+  } catch (error) {
+    console.error('Error in searchSpecificVenuesCostEffective:', error)
+    throw error
+  }
 }

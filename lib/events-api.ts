@@ -1,4 +1,5 @@
 import { sanitizeInput } from "./api-utils"
+import { isTestMode } from "./app-config"
 import { type PlaceResult } from "./search-utils"
 
 // Types for event data
@@ -89,6 +90,20 @@ export async function fetchEventbriteEvents(
   excludeIds: string[] = []
 ): Promise<PlaceResult[]> {
   try {
+    if (isTestMode()) {
+      const mocks: PlaceResult[] = Array.from({ length: limit }, (_, i) => ({
+        id: `eventbrite-mock-${i}`,
+        name: `Mock Eventbrite Event ${i + 1}`,
+        address: `${sanitizeInput(city)} Event Venue ${i + 1}`,
+        rating: 4.2,
+        price: 2,
+        category: 'event',
+        photoUrl: `https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?q=80&w=600&auto=format&fit=crop`,
+        openNow: true,
+        placeId: `mock-eb-${i}`,
+      }))
+      return mocks.filter(m => !excludeIds.includes(m.id))
+    }
     // RE-ENABLED: Eventbrite API is now enabled
     const DISABLE_EVENTBRITE = false // Set to false to enable
     
@@ -174,6 +189,20 @@ export async function fetchTicketmasterEvents(
   excludeIds: string[] = []
 ): Promise<PlaceResult[]> {
   try {
+    if (isTestMode()) {
+      const mocks: PlaceResult[] = Array.from({ length: limit }, (_, i) => ({
+        id: `ticketmaster-mock-${i}`,
+        name: i % 3 === 0 ? `Mock Baseball Game` : `Mock Concert ${i + 1}`,
+        address: `${sanitizeInput(city)} Arena ${i + 1}`,
+        rating: 4.6,
+        price: 3,
+        category: 'event',
+        photoUrl: `https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=600&auto=format&fit=crop`,
+        openNow: true,
+        placeId: `mock-tm-${i}`,
+      }))
+      return mocks.filter(m => !excludeIds.includes(m.id))
+    }
     const apiKey = process.env.TICKETMASTER_API_KEY
     
     if (!apiKey) {
@@ -189,6 +218,14 @@ export async function fetchTicketmasterEvents(
     
     // Make multiple requests for different event types
     const allEvents: PlaceResult[] = []
+    const seenIds = new Set<string>()
+    const seenNames = new Set<string>()
+
+    const normalizeName = (name: string) => name
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
     
     // Fixed category mappings for Ticketmaster API
     const eventCategories = [
@@ -199,14 +236,15 @@ export async function fetchTicketmasterEvents(
       { keyword: 'family', segment: 'KZFzniwnSyZfZ7v7n1' }, // Family
     ]
     
+    const perCategoryLimit = Math.max(1, Math.ceil(limit / eventCategories.length))
+
     for (const category of eventCategories) {
       const url = new URL('https://app.ticketmaster.com/discovery/v2/events.json')
       
       // Fixed parameters for Ticketmaster API
       url.searchParams.append('apikey', apiKey)
-      url.searchParams.append('stateCode', 'MN')  // Minnesota state code
       url.searchParams.append('countryCode', 'US')  // Required parameter
-      url.searchParams.append('city', 'Saint Paul')  // Clean city name
+      url.searchParams.append('city', sanitizedCity)  // Use requested city
       url.searchParams.append('radius', '25')  // Miles radius
       url.searchParams.append('unit', 'miles')
       url.searchParams.append('size', '50')
@@ -237,13 +275,24 @@ export async function fetchTicketmasterEvents(
       const data = await response.json()
       
       if (data._embedded?.events && data._embedded.events.length > 0) {
-        const batchEvents: PlaceResult[] = data._embedded.events
-          .filter((event: TicketmasterEvent) => !excludeIds.includes(`ticketmaster-${event.id}`))
+        const converted: PlaceResult[] = data._embedded.events
           .map((event: TicketmasterEvent) => convertTicketmasterToPlaceResult(event))
           .filter((event: PlaceResult) => event.openNow)
 
-        allEvents.push(...batchEvents)
-        console.log(`Found ${batchEvents.length} Ticketmaster events for ${category.keyword}`)
+        const uniqueForCategory: PlaceResult[] = []
+        for (const ev of converted) {
+          if (excludeIds.includes(ev.id)) continue
+          if (seenIds.has(ev.id)) continue
+          const nameKey = normalizeName(ev.name)
+          if (seenNames.has(nameKey)) continue // avoid multiple dates of same named game/show
+          seenIds.add(ev.id)
+          seenNames.add(nameKey)
+          uniqueForCategory.push(ev)
+          if (uniqueForCategory.length >= perCategoryLimit) break
+        }
+
+        allEvents.push(...uniqueForCategory)
+        console.log(`Found ${uniqueForCategory.length} unique Ticketmaster events for ${category.keyword}`)
       } else {
         console.log(`No events found for ${category.keyword}`)
       }
