@@ -11,19 +11,33 @@ export async function addToFavorites(userId: string, place: PlaceResult): Promis
       return false
     }
 
+    // Ensure we have a valid place_id - use place.id or place.placeId or generate a fallback
+    const placeId = place.id || place.placeId || `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    if (!placeId) {
+      console.error("No valid place_id found for favorite")
+      return false
+    }
+
+    console.log("Adding to favorites with place_id:", placeId, "for place:", place.name, "category:", place.category)
+
     const { error } = await supabase.from("favorites").insert({
       user_id: userId,
-      place_id: place.id,
-      name: place.name,
-      category: place.category,
-      address: place.address,
-      rating: place.rating,
-      price: place.price,
-      photo_url: place.photoUrl,
+      place_id: placeId,
+      name: place.name || 'Unknown Place',
+      category: place.category || 'activity', // Now 'event' is allowed
+      address: place.address || '',
+      rating: place.rating || 0,
+      price: place.price || 0,
+      photo_url: place.photoUrl || null,
     } as any)
 
-    if (error) throw error
+    if (error) {
+      console.error("Supabase error adding to favorites:", error)
+      throw error
+    }
 
+    console.log("Successfully added to favorites:", place.name)
     return true
   } catch (error) {
     console.error("Error adding to favorites:", error)

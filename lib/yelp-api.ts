@@ -1,4 +1,5 @@
 import { sanitizeInput } from "./api-utils"
+import { isTestMode } from "./app-config"
 import { type PlaceResult } from "./search-utils"
 
 // Types for Yelp API responses
@@ -69,14 +70,135 @@ export interface YelpBusinessDetails extends YelpBusiness {
   }>
 }
 
+// Fetch Yelp activities (non-restaurant venues) via category aliases
+export async function fetchYelpActivities(
+  city: string,
+  limit = 20,
+  offset = 0,
+  excludeIds: string[] = [],
+  searchTerm?: string
+): Promise<PlaceResult[]> {
+  try {
+    // Return mock data when in test mode
+    if (isTestMode()) {
+      const mocks: PlaceResult[] = Array.from({ length: limit }, (_, i) => ({
+        id: `yelp-mock-activity-${offset + i}`,
+        name: `Mock Activity ${offset + i + 1}`,
+        address: `${sanitizeInput(city)} Activity Address ${i + 1}`,
+        rating: 4.3,
+        price: 2,
+        category: 'activity',
+        photoUrl: `https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=600&auto=format&fit=crop`,
+        openNow: true,
+        placeId: `mock-activity-${offset + i}`,
+      }))
+      return mocks.filter(m => !excludeIds.includes(m.id))
+    }
+    const apiKey = process.env.YELP_API_KEY
+    if (!apiKey) {
+      console.warn("Yelp API key not configured, skipping Yelp activities")
+      return []
+    }
+
+    const sanitizedCity = sanitizeInput(city)
+    const maxPerRequest = 50
+    const maxTotalResults = 1000
+    const totalRequested = Math.min(limit, maxTotalResults - offset)
+    const numRequests = Math.ceil(totalRequested / maxPerRequest)
+
+    console.log(`Fetching activities from Yelp for ${sanitizedCity} (total requested: ${totalRequested}, requests needed: ${numRequests})`)
+
+    const allActivities: PlaceResult[] = []
+    const seenIds = new Set<string>()
+
+    // Broad activity-focused categories (non-restaurant)
+    const activityCategories = [
+      'active', 'arts', 'museums', 'theater', 'escapegames', 'arcades', 'bowling',
+      'axethrowing', 'paintandsip', 'landmarks', 'cinema', 'comedyclubs'
+    ].join(',')
+
+    for (let i = 0; i < numRequests; i++) {
+      const currentOffset = offset + (i * maxPerRequest)
+      const currentLimit = Math.min(maxPerRequest, totalRequested - (i * maxPerRequest))
+      if (currentLimit <= 0) break
+
+      const url = new URL('https://api.yelp.com/v3/businesses/search')
+      url.searchParams.append('location', sanitizedCity)
+      url.searchParams.append('categories', activityCategories)
+      url.searchParams.append('limit', currentLimit.toString())
+      url.searchParams.append('offset', currentOffset.toString())
+      if (searchTerm && searchTerm.trim()) {
+        url.searchParams.append('term', searchTerm.trim())
+      }
+      url.searchParams.append('sort_by', 'best_match')
+      url.searchParams.append('radius', '40000')
+
+      console.log(`Yelp activities request ${i + 1}/${numRequests}: limit=${currentLimit}, offset=${currentOffset}`)
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store'
+      })
+
+      if (!response.ok) {
+        console.error(`Yelp activities API error on request ${i + 1}: ${response.status} ${response.statusText}`)
+        continue
+      }
+
+      const data: YelpSearchResponse = await response.json()
+      if (!data.businesses || data.businesses.length === 0) {
+        console.log(`No more Yelp activities found for ${sanitizedCity} at offset ${currentOffset}`)
+        break
+      }
+
+      const newActivities: PlaceResult[] = data.businesses
+        .filter(business => !excludeIds.includes(`yelp-${business.id}`) && !seenIds.has(business.id))
+        .map(business => {
+          seenIds.add(business.id)
+          return convertYelpBusinessToPlaceResult(business, 'activity')
+        })
+
+      allActivities.push(...newActivities)
+
+      if (data.businesses.length < currentLimit) break
+      if (i < numRequests - 1) await new Promise(r => setTimeout(r, 100))
+    }
+
+    console.log(`Total Yelp activities found: ${allActivities.length}`)
+    return allActivities
+  } catch (error) {
+    console.error('Error fetching Yelp activities:', error)
+    return []
+  }
+}
+
 // Main function to search Yelp restaurants
 export async function fetchYelpRestaurants(
   city: string,
   limit = 20,
   offset = 0,
-  excludeIds: string[] = []
+  excludeIds: string[] = [],
+  searchTerm?: string
 ): Promise<PlaceResult[]> {
   try {
+    // Return mock data when in test mode
+    if (isTestMode()) {
+      const mocks: PlaceResult[] = Array.from({ length: limit }, (_, i) => ({
+        id: `yelp-mock-restaurant-${offset + i}`,
+        name: `Mock Restaurant ${offset + i + 1}`,
+        address: `${sanitizeInput(city)} Restaurant Address ${i + 1}`,
+        rating: 4.5,
+        price: 2,
+        category: 'restaurant',
+        photoUrl: `https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=600&auto=format&fit=crop`,
+        openNow: true,
+        placeId: `mock-restaurant-${offset + i}`,
+      }))
+      return mocks.filter(m => !excludeIds.includes(m.id))
+    }
     const apiKey = process.env.YELP_API_KEY
     
     if (!apiKey) {
@@ -86,45 +208,97 @@ export async function fetchYelpRestaurants(
 
     const sanitizedCity = sanitizeInput(city)
     
-    // Yelp Fusion API search endpoint
-    const url = new URL('https://api.yelp.com/v3/businesses/search')
-    url.searchParams.append('location', sanitizedCity)
-    url.searchParams.append('categories', 'restaurants,food,bars')
-    url.searchParams.append('limit', limit.toString())
-    url.searchParams.append('offset', offset.toString())
-    url.searchParams.append('sort_by', 'best_match') // Yelp's algorithm for best results
-    url.searchParams.append('radius', '40000') // 25 miles in meters
+    // Yelp has a maximum of 50 results per request and 1000 total results
+    const maxPerRequest = 50
+    const maxTotalResults = 1000
     
-    console.log(`Fetching restaurants from Yelp for ${sanitizedCity} (limit: ${limit}, offset: ${offset})`)
+    // Calculate how many requests we need to make
+    const totalRequested = Math.min(limit, maxTotalResults - offset)
+    const numRequests = Math.ceil(totalRequested / maxPerRequest)
+    
+    console.log(`Fetching restaurants from Yelp for ${sanitizedCity} (total requested: ${totalRequested}, requests needed: ${numRequests})`)
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store' // Restaurant data changes frequently
-    })
+    const allRestaurants: PlaceResult[] = []
+    const seenIds = new Set<string>()
 
-    if (!response.ok) {
-      console.error(`Yelp API error: ${response.status} ${response.statusText}`)
-      return []
+    // Make multiple requests to get all the results we need
+    for (let i = 0; i < numRequests; i++) {
+      const currentOffset = offset + (i * maxPerRequest)
+      const currentLimit = Math.min(maxPerRequest, totalRequested - (i * maxPerRequest))
+      
+      if (currentLimit <= 0) break
+      
+      // Yelp Fusion API search endpoint
+      const url = new URL('https://api.yelp.com/v3/businesses/search')
+      url.searchParams.append('location', sanitizedCity)
+      url.searchParams.append('categories', 'restaurants,food,bars')
+      url.searchParams.append('limit', currentLimit.toString())
+      url.searchParams.append('offset', currentOffset.toString())
+      
+      // Add search term if provided
+      if (searchTerm && searchTerm.trim()) {
+        url.searchParams.append('term', searchTerm.trim())
+      }
+      
+      // Use different sorting strategies to get more variety
+      // Yelp supports: best_match, rating, review_count, distance
+      const sortStrategies = ['best_match', 'rating', 'review_count', 'distance']
+      const sortIndex = Math.floor(offset / 50) % sortStrategies.length // Change sort every 50 results
+      const sortBy = sortStrategies[sortIndex]
+      url.searchParams.append('sort_by', sortBy)
+      
+      url.searchParams.append('radius', '40000') // 25 miles in meters
+      
+      console.log(`Yelp request ${i + 1}/${numRequests}: limit=${currentLimit}, offset=${currentOffset}, sort_by=${sortBy}`)
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store' // Restaurant data changes frequently
+      })
+
+      if (!response.ok) {
+        let body = ''
+        try { body = await response.text() } catch {}
+        console.error(`Yelp API error on request ${i + 1}: ${response.status} ${response.statusText} ${body ? '- ' + body : ''}`)
+        continue // Skip this request but continue with others
+      }
+
+      const data: YelpSearchResponse = await response.json()
+      
+      if (!data.businesses || data.businesses.length === 0) {
+        console.log(`No more Yelp restaurants found for ${sanitizedCity} at offset ${currentOffset}`)
+        break // No more results, stop paginating
+      }
+
+      console.log(`Found ${data.businesses.length} Yelp restaurants in request ${i + 1}`)
+
+      // Filter out excluded businesses and duplicates, then convert to our format
+      const newRestaurants: PlaceResult[] = data.businesses
+        .filter(business => !excludeIds.includes(`yelp-${business.id}`) && !seenIds.has(business.id))
+        .map(business => {
+          seenIds.add(business.id)
+          return convertYelpToPlaceResult(business)
+        })
+
+      allRestaurants.push(...newRestaurants)
+      
+      // If we got fewer results than requested, we've reached the end
+      if (data.businesses.length < currentLimit) {
+        console.log(`Reached end of Yelp results after ${i + 1} requests`)
+        break
+      }
+      
+      // Add a small delay between requests to be respectful to the API
+      if (i < numRequests - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
     }
 
-    const data: YelpSearchResponse = await response.json()
-    
-    if (!data.businesses || data.businesses.length === 0) {
-      console.log(`No Yelp restaurants found for ${sanitizedCity}`)
-      return []
-    }
-
-    console.log(`Found ${data.businesses.length} Yelp restaurants for ${sanitizedCity}`)
-
-    // Filter out excluded businesses and convert to our format
-    const restaurants: PlaceResult[] = data.businesses
-      .filter(business => !excludeIds.includes(business.id))
-      .map(business => convertYelpToPlaceResult(business))
-
-    return restaurants
+    console.log(`Total Yelp restaurants found: ${allRestaurants.length}`)
+    return allRestaurants
 
   } catch (error) {
     console.error('Error fetching Yelp restaurants:', error)
@@ -135,6 +309,29 @@ export async function fetchYelpRestaurants(
 // Function to get detailed business information including photos
 export async function fetchYelpBusinessDetails(businessId: string): Promise<YelpBusinessDetails | null> {
   try {
+    if (isTestMode()) {
+      return {
+        id: `mock-${businessId}`,
+        alias: `mock-${businessId}`,
+        name: `Mock Business ${businessId}`,
+        image_url: '',
+        is_closed: false,
+        url: '',
+        review_count: 120,
+        categories: [{ alias: 'mock', title: 'Mock' }],
+        rating: 4.4,
+        coordinates: { latitude: 0, longitude: 0 },
+        transactions: [],
+        price: '$$',
+        location: { address1: '123 Test', city: 'Test', zip_code: '00000', country: 'US', state: 'TS', display_address: ['123 Test', 'Test, TS'] },
+        phone: '',
+        display_phone: '',
+        distance: 0,
+        photos: [],
+        hours: [{ open: [], hours_type: 'REGULAR', is_open_now: true }],
+        special_hours: [],
+      }
+    }
     const apiKey = process.env.YELP_API_KEY
     
     if (!apiKey) {
@@ -250,6 +447,28 @@ function convertYelpToPlaceResult(business: YelpBusiness): PlaceResult {
     placeId: business.id,
     // Additional Yelp-specific data we can store
     preferenceScore: business.rating * (business.review_count > 50 ? 1.1 : 1.0), // Boost well-reviewed places
+  }
+}
+
+// Generic converter allowing category override
+function convertYelpBusinessToPlaceResult(business: YelpBusiness, category: 'restaurant' | 'activity' | 'event'): PlaceResult {
+  let price = 2
+  if (business.price) {
+    price = business.price.length
+  }
+  const address = business.location.display_address.join(', ')
+  const openNow = !business.is_closed
+  return {
+    id: `yelp-${business.id}`,
+    name: business.name,
+    address,
+    rating: business.rating,
+    price,
+    category,
+    photoUrl: business.image_url || undefined,
+    openNow,
+    placeId: business.id,
+    preferenceScore: business.rating * (business.review_count > 50 ? 1.1 : 1.0),
   }
 }
 

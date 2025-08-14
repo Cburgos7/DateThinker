@@ -315,6 +315,14 @@ export default function MakeDatePage() {
         
         // Clear the planning stack after successful save
         await handleClearStack()
+        
+        // Navigate to the newly created date set page
+        if (result.date_set && result.date_set.id) {
+          router.push(`/date-plans/${result.date_set.id}`)
+        } else {
+          // Fallback: navigate to the date plans page
+          router.push('/date-plans')
+        }
       } else {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to save date set')
@@ -337,11 +345,19 @@ export default function MakeDatePage() {
     }
 
     setSearchingVenues(true)
-    console.log("🔍 Starting search for:", query)
+    console.log("🔍 Starting cost-effective search for:", query)
     
     try {
-      // Use Google Places API for specific venue searches
-      const searchUrl = `/api/places?query=${encodeURIComponent(query)}&location=${encodeURIComponent('Saint Paul, MN')}`
+      // Use the new cost-effective search API
+      // Only use Google API for specific venue names (3+ words or specific business names)
+      const isSpecificVenue = query.split(' ').length >= 3 || 
+                              query.toLowerCase().includes('restaurant') ||
+                              query.toLowerCase().includes('cafe') ||
+                              query.toLowerCase().includes('bar') ||
+                              query.toLowerCase().includes('theater') ||
+                              query.toLowerCase().includes('museum')
+      
+      const searchUrl = `/api/search?query=${encodeURIComponent(query)}&city=${encodeURIComponent('Saint Paul, MN')}&useGoogleAPI=${isSpecificVenue}`
       console.log("🔍 Making request to:", searchUrl)
       
       const response = await fetch(searchUrl)
@@ -351,46 +367,27 @@ export default function MakeDatePage() {
         const data = await response.json()
         console.log("🔍 API response:", data)
         
-        if (data.status === "OK" && data.results) {
-          // Convert Google Places results to PlaceResult format
-          const convertedResults = data.results.map((place: any) => ({
-            id: place.place_id,
-            name: place.name,
-            category: getCategoryFromTypes(place.types),
-            address: place.formatted_address || '',
-            rating: place.rating,
-            price: place.price_level || 2,
-            photoUrl: place.photos?.[0]?.name ? 
-              `/api/place-photo?photoName=${place.photos[0].name}` : undefined,
-            openNow: place.opening_hours?.open_now,
-            placeId: place.place_id,
-            phone: place.formatted_phone_number,
-            website: place.website,
-            description: place.types?.join(', ') || ''
+        if (data.venues && data.venues.length > 0) {
+          // Convert to PlaceResult format
+          const convertedResults = data.venues.map((venue: any) => ({
+            id: venue.id,
+            name: venue.name,
+            category: venue.category,
+            address: venue.address || '',
+            rating: venue.rating,
+            price: venue.priceLevel || 2,
+            photoUrl: venue.image,
+            openNow: venue.openNow,
+            placeId: venue.id,
+            phone: venue.phone,
+            website: venue.website,
+            description: venue.description || ''
           }))
           console.log("🔍 Converted results:", convertedResults)
           setVenueSearchResults(convertedResults)
-        } else if (data.status === "ZERO_RESULTS") {
+        } else {
           console.log("🔍 No results found")
           setVenueSearchResults([])
-        } else {
-          console.error("🔍 Google Places API error:", data.error_message || data.status)
-          // Fallback: create a custom venue suggestion
-          const customSuggestion: PlaceResult = {
-            id: `custom-${Date.now()}`,
-            name: query.trim(),
-            category: 'activity' as const,
-            address: '',
-            rating: undefined,
-            price: 0,
-            photoUrl: undefined,
-            openNow: undefined,
-            placeId: `custom-${Date.now()}`,
-            phone: undefined,
-            website: undefined,
-            description: `Custom venue: ${query.trim()}`
-          }
-          setVenueSearchResults([customSuggestion])
         }
       } else {
         const errorText = await response.text()
@@ -436,7 +433,7 @@ export default function MakeDatePage() {
   }
 
   // Helper function to convert Google Places types to our categories
-  const getCategoryFromTypes = (types: string[]): 'restaurant' | 'activity' | 'outdoor' | 'event' => {
+  const getCategoryFromTypes = (types: string[]): 'restaurant' | 'activity' | 'event' => {
     if (!types || types.length === 0) return 'activity'
     
     const typeString = types.join(' ').toLowerCase()
@@ -444,9 +441,7 @@ export default function MakeDatePage() {
     if (typeString.includes('restaurant') || typeString.includes('food') || typeString.includes('meal')) {
       return 'restaurant'
     }
-    if (typeString.includes('park') || typeString.includes('natural_feature') || typeString.includes('campground')) {
-      return 'outdoor'
-    }
+    // Outdoor grouped into activity in this MVP
     if (typeString.includes('movie_theater') || typeString.includes('amusement_park') || typeString.includes('museum') || typeString.includes('art_gallery')) {
       return 'activity'
     }
@@ -490,7 +485,6 @@ export default function MakeDatePage() {
         const updatedStack = await getPlanningStack()
         setPlanningStack(updatedStack)
         setManualEntry("")
-        setShowManualEntry(false)
         toast({
           title: "Added to planning stack",
           description: `${manualEntry.trim()} has been added to your planning stack.`,
@@ -542,98 +536,64 @@ export default function MakeDatePage() {
             <p className="text-lg text-gray-600">Organize your venues and create the perfect date experience.</p>
           </div>
 
-          {/* Planning Stack Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <Calendar className="h-6 w-6 text-blue-600" />
-              <h2 className="text-2xl font-semibold text-gray-900">
-                Planning Stack ({planningStack.length} items)
-              </h2>
-            </div>
-            {planningStack.length > 0 && (
-              <Button
-                variant="outline"
-                onClick={handleClearStack}
-                className="flex items-center space-x-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>Clear All</span>
-              </Button>
-            )}
-          </div>
-
           {/* Planning Stack */}
-          {planningStack.length === 0 ? (
-            <Card className="p-8 text-center">
-              <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Your planning stack is empty</h3>
-              <p className="text-gray-600 mb-4">
-                Add venues from the explore page or your favorites to start planning your date.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <Button onClick={() => router.push('/explore')}>
-                  <Compass className="h-4 w-4 mr-2" />
-                  Explore Venues
-                </Button>
-                <Button variant="outline" onClick={() => setShowFavorites(true)}>
-                  <Heart className="h-4 w-4 mr-2" />
-                  Add from Favorites
-                </Button>
+          <Card className="mb-8">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Calendar className="h-6 w-6 text-blue-600" />
+                  <div>
+                    <CardTitle className="text-xl text-gray-900">
+                      Planning Stack ({planningStack.length} items)
+                    </CardTitle>
+                    <p className="text-sm text-gray-600">Organize your venues in the order you want to visit them</p>
+                  </div>
+                </div>
+                {planningStack.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={handleClearStack}
+                    className="flex items-center space-x-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>Clear All</span>
+                  </Button>
+                )}
               </div>
-            </Card>
-          ) : (
-            <div className="space-y-4 mb-8">
-              {planningStack.map((item, index) => (
-                <PlanningStackItem
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  totalItems={planningStack.length}
-                  onRemove={handleRemoveFromStack}
-                  onUpdate={handleUpdateItem}
-                  onMove={handleMoveItem}
-                  editingItem={editingItem}
-                  setEditingItem={setEditingItem}
-                  onViewDetails={openVenueDetails}
-                />
-              ))}
-            </div>
-          )}
+            </CardHeader>
+            <CardContent>
+              {planningStack.length === 0 ? (
+                <div className="text-center py-12">
+                  <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Your planning stack is empty</h3>
+                  <p className="text-gray-600">
+                    Use the options below to add venues to your planning stack.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {planningStack.map((item, index) => (
+                    <PlanningStackItem
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      totalItems={planningStack.length}
+                      onRemove={handleRemoveFromStack}
+                      onUpdate={handleUpdateItem}
+                      onMove={handleMoveItem}
+                      editingItem={editingItem}
+                      setEditingItem={setEditingItem}
+                      onViewDetails={openVenueDetails}
+                    />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Add Item Section */}
           <div className="mb-8">
-            <div className="text-center mb-6">
-              <div className="flex items-center justify-center space-x-3 mb-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Plus className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900">Add More Items</h3>
-                  <p className="text-sm text-gray-600">Discover venues and activities for your date</p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => setShowAddOptions(!showAddOptions)}
-                className="flex items-center space-x-2 mx-auto"
-                size="lg"
-              >
-                {showAddOptions ? (
-                  <>
-                    <X className="h-4 w-4" />
-                    <span>Hide Options</span>
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    <span>Show Options</span>
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {showAddOptions && (
-              <div className="space-y-6">
+            <div className="space-y-6">
                 {/* Quick Actions Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer border-2 border-transparent hover:border-blue-200">
@@ -742,6 +702,58 @@ export default function MakeDatePage() {
                     </CardContent>
                   </Card>
                 )}
+                {showManualEntry && (
+                <Card className="border-2 border-green-100 mb-4">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <Edit3 className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg text-gray-900">Custom Activity</CardTitle>
+                        <p className="text-sm text-gray-600">Add your own custom activity or event</p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                      {showManualEntry && (
+                        <div className="border-t pt-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center space-x-2">
+                              <Edit3 className="h-4 w-4 text-green-600" />
+                              <h4 className="font-semibold text-sm text-gray-900">Add Custom Activity</h4>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-3 p-4 bg-green-50 rounded-lg border border-green-200">
+                            <div className="flex space-x-2">
+                              <Input
+                                placeholder="e.g., Board games after dinner, Movie night, etc."
+                                value={manualEntry}
+                                onChange={(e) => setManualEntry(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleAddManualEntry()
+                                  }
+                                }}
+                                className="flex-1"
+                              />
+                              <Button 
+                                onClick={handleAddManualEntry}
+                                disabled={!manualEntry.trim()}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-green-700">
+                              💡 Add any custom activity or event that's not in our database
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                </Card>)}
 
                 {/* Search for Specific Venue */}
                 <Card className="border-2 border-gray-100 hover:border-gray-200 transition-colors">
@@ -827,49 +839,11 @@ export default function MakeDatePage() {
                           ))}
                         </div>
                       )}
-
-                      {/* Manual Entry Section - Now controlled by the card button */}
-                      {showManualEntry && (
-                        <div className="border-t pt-4">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center space-x-2">
-                              <Edit3 className="h-4 w-4 text-green-600" />
-                              <h4 className="font-semibold text-sm text-gray-900">Add Custom Activity</h4>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-3 p-4 bg-green-50 rounded-lg border border-green-200">
-                            <div className="flex space-x-2">
-                              <Input
-                                placeholder="e.g., Board games after dinner, Movie night, etc."
-                                value={manualEntry}
-                                onChange={(e) => setManualEntry(e.target.value)}
-                                onKeyPress={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleAddManualEntry()
-                                  }
-                                }}
-                                className="flex-1"
-                              />
-                              <Button 
-                                onClick={handleAddManualEntry}
-                                disabled={!manualEntry.trim()}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </Button>
-                            </div>
-                            <p className="text-xs text-green-700">
-                              💡 Add any custom activity or event that's not in our database
-                            </p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
               </div>
-            )}
+            
           </div>
 
           {/* Save Date Set Button */}
@@ -967,7 +941,7 @@ function PlanningStackItem({
     const venue: PlaceResult = {
       id: item.venue_id,
       name: item.venue_name,
-      category: item.venue_category,
+      category: (item.venue_category === 'outdoor' ? 'activity' : item.venue_category) as 'restaurant' | 'activity' | 'event',
       address: item.venue_address || '',
       rating: item.venue_rating,
       price: item.venue_price_level || 0,
@@ -1153,32 +1127,109 @@ function FavoriteCard({
   onAddToStack: (venue: PlaceResult) => void
   isInStack: boolean
 }) {
+  // Helper function to get category color
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'restaurant': return 'bg-orange-100 text-orange-800'
+      case 'activity': return 'bg-blue-100 text-blue-800'
+      case 'event': return 'bg-purple-100 text-purple-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  // Helper function to get category icon
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'restaurant': return '🍽️'
+      case 'activity': return '🎉'
+      case 'event': return '🎪'
+      default: return '📍'
+    }
+  }
+
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow">
+    <Card className="group hover:shadow-lg transition-shadow cursor-pointer">
       <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h4 className="font-semibold text-sm">{favorite.name}</h4>
-            <div className="flex items-center space-x-2 text-xs text-gray-600 mt-1">
-              <Badge variant="outline" className="text-xs">{favorite.category}</Badge>
-              {favorite.rating && (
-                <div className="flex items-center">
-                  <Star className="w-3 h-3 text-yellow-400 fill-current mr-1" />
-                  {favorite.rating}
-                </div>
-              )}
-            </div>
-            {favorite.address && (
-              <div className="flex items-center text-xs text-gray-500 mt-1">
-                <MapPin className="w-3 h-3 mr-1" />
-                {favorite.address}
+        {/* Image Section */}
+        {favorite.photoUrl ? (
+          <div className="mb-3 rounded-lg overflow-hidden aspect-video bg-gray-100">
+            <img
+              src={favorite.photoUrl}
+              alt={favorite.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={(e) => {
+                // Hide the image on error and show fallback content
+                e.currentTarget.style.display = 'none'
+                e.currentTarget.nextElementSibling?.classList.remove('hidden')
+              }}
+            />
+            <div className="hidden w-full h-full flex flex-col items-center justify-center p-4 text-center bg-gradient-to-br from-blue-50 to-purple-50">
+              <div className="text-3xl mb-2">
+                {getCategoryIcon(favorite.category)}
               </div>
+              <h3 className="font-semibold text-gray-800 text-sm mb-1">{favorite.name}</h3>
+              <Badge variant="outline" className="text-xs capitalize">
+                {favorite.category}
+              </Badge>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-3 rounded-lg aspect-video bg-gradient-to-br from-blue-50 to-purple-50 flex flex-col items-center justify-center p-4 text-center">
+            <div className="text-3xl mb-2">
+              {getCategoryIcon(favorite.category)}
+            </div>
+            <h3 className="font-semibold text-gray-800 text-sm mb-1">{favorite.name}</h3>
+            <Badge variant="outline" className="text-xs capitalize">
+              {favorite.category}
+            </Badge>
+          </div>
+        )}
+
+        {/* Category Badge */}
+        <div className="flex items-start justify-between mb-2">
+          <Badge className={getCategoryColor(favorite.category)}>
+            {getCategoryIcon(favorite.category)} {favorite.category}
+          </Badge>
+        </div>
+
+        {/* Venue Name */}
+        <h3 className="font-semibold text-lg mb-1 group-hover:text-blue-600 transition-colors">
+          {favorite.name}
+        </h3>
+
+        {/* Description */}
+        {favorite.description && (
+          <p className="text-gray-600 text-sm mb-2">{favorite.description}</p>
+        )}
+
+        {/* Address */}
+        {favorite.address && (
+          <p className="text-gray-500 text-sm mb-2 flex items-center">
+            <MapPin className="w-3 h-3 mr-1" />
+            {favorite.address}
+          </p>
+        )}
+
+        {/* Rating, Price, and Actions */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            {favorite.rating && (
+              <div className="flex items-center">
+                <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                <span className="text-sm">{favorite.rating}</span>
+              </div>
+            )}
+            {favorite.price && favorite.price > 0 && (
+              <span className="text-sm text-gray-500">
+                {'$'.repeat(favorite.price)}
+              </span>
             )}
           </div>
           <div className="flex space-x-1">
             <Button
-              variant="ghost"
               size="sm"
+              variant="ghost"
               onClick={(e) => {
                 e.stopPropagation()
                 onToggleFavorite(favorite)
@@ -1187,16 +1238,15 @@ function FavoriteCard({
               <Heart className={`w-4 h-4 ${isInStack ? 'fill-red-500 text-red-500' : ''}`} />
             </Button>
             <Button
-              variant={isInStack ? "default" : "outline"}
               size="sm"
+              variant="ghost"
               onClick={(e) => {
                 e.stopPropagation()
                 onAddToStack(favorite)
               }}
               disabled={isInStack}
             >
-              <Bookmark className="w-4 h-4 mr-1" />
-              {isInStack ? 'In Stack' : 'Add to Stack'}
+              {isInStack ? <Check className="w-4 h-4 text-green-600" /> : <Plus className="w-4 h-4" />}
             </Button>
           </div>
         </div>

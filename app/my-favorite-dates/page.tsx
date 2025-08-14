@@ -362,8 +362,52 @@ export default function MyFavoriteDatesPage() {
                         )}
                       </div>
                     ) : (
-                      <div className="h-48 bg-gray-200 flex items-center justify-center">
-                        <span className="text-gray-500">No image available</span>
+                      <div className="h-48 relative overflow-hidden">
+                        {/* Gradient background */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-100 via-purple-50 to-pink-100"></div>
+                        
+                        {/* Content overlay */}
+                        <div className="relative h-full flex flex-col items-center justify-center p-4 text-center">
+                          {/* Category emoji */}
+                          <div className="text-5xl mb-3 drop-shadow-sm">
+                            {place.category === 'restaurant' ? '🍽️' : 
+                             place.category === 'activity' ? '🎯' : 
+                             place.category === 'event' ? '🎪' : 
+                             place.category === 'drink' ? '🍺' : 
+                             place.category === 'outdoor' ? '🌳' : '🏛️'}
+                          </div>
+                          
+                          {/* Venue name */}
+                          <h3 className="font-bold text-gray-800 text-sm mb-2 line-clamp-2 leading-tight">
+                            {place.name}
+                          </h3>
+                          
+                          {/* Category badge and rating */}
+                          <div className="flex items-center space-x-2 text-xs">
+                            <Badge variant="outline" className="text-xs capitalize bg-white/80 border-gray-300">
+                              {place.category}
+                            </Badge>
+                            {place.rating && (
+                              <div className="flex items-center bg-white/80 px-2 py-1 rounded-full">
+                                <Star className="w-3 h-3 text-yellow-400 fill-current mr-1" />
+                                <span className="text-gray-700 font-medium">{place.rating.toFixed(1)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Selection indicator */}
+                        {isSelectionMode && (
+                          <div className="absolute top-2 right-2">
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                              isSelected 
+                                ? 'bg-blue-500 border-blue-500' 
+                                : 'bg-white bg-opacity-90 border-gray-300'
+                            }`}>
+                              {isSelected && <Check className="h-4 w-4 text-white" />}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                     <CardHeader className="pb-3">
