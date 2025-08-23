@@ -72,7 +72,7 @@ interface PlaceResult {
   rating: number;
   price: number;
   photoUrl: string;
-  category: string;
+  category: "restaurant" | "activity" | "event";
   placeId: string;
   phone?: string;
   website?: string;
@@ -83,6 +83,7 @@ export function ExploreSimple() {
   const router = useRouter()
   const [userLocation, setUserLocation] = useState<string>('')
   const [city, setCity] = useState('')
+  const [userCoordinates, setUserCoordinates] = useState<{lat: number, lng: number} | null>(null)
   const cityLockedRef = useRef(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
@@ -133,6 +134,10 @@ export function ExploreSimple() {
 
       // Reverse geocode the coordinates to get city name
       const { latitude, longitude } = position.coords
+      
+      // Store coordinates for use in venue searches
+      setUserCoordinates({ lat: latitude, lng: longitude })
+      
       const response = TEST_MODE ? null : await fetch(
         `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
       )
@@ -274,7 +279,26 @@ export function ExploreSimple() {
       const excludeIds = pageNum === 1 ? [] : (currentIds || [])
       const categoryQuery = categoryParam && categoryParam !== 'all' ? `&category=${encodeURIComponent(categoryParam)}` : ''
       // Use a smaller page size to better enable Load More
-      const response = await fetch(`/api/explore?city=${encodeURIComponent(city)}&page=${pageNum}&limit=9&excludeIds=${excludeIds.join(',')}${categoryQuery}`)
+      // Build query parameters
+      const params = new URLSearchParams({
+        city: city,
+        page: pageNum.toString(),
+        limit: '25', // Increased to ensure we get at least 20+ places
+        excludeIds: excludeIds.join(',')
+      })
+      
+      // Add category if specified
+      if (categoryParam && categoryParam !== 'all') {
+        params.set('category', categoryParam)
+      }
+      
+      // Add coordinates if available
+      if (userCoordinates) {
+        params.set('lat', userCoordinates.lat.toString())
+        params.set('lng', userCoordinates.lng.toString())
+      }
+      
+      const response = await fetch(`/api/explore?${params.toString()}`)
       
       if (!response.ok) {
         throw new Error('Failed to fetch venues')
