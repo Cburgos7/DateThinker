@@ -563,12 +563,21 @@ export default function MakeDatePage() {
             </CardHeader>
             <CardContent>
               {planningStack.length === 0 ? (
-                <div className="text-center py-12">
+                <div className="rounded-xl bg-card text-card-foreground shadow group hover:shadow-lg transition-all duration-300 cursor-pointer border-2 border-transparent hover:border-blue-200 text-center py-12">
                   <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">Your planning stack is empty</h3>
-                  <p className="text-gray-600">
-                    Use the options below to add venues to your planning stack.
+                  <p className="text-gray-600 mb-6">
+                    Start building your perfect date by adding venues and activities.
                   </p>
+                  <div className="flex justify-center">
+                    <Button 
+                      onClick={() => router.push('/explore')}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Compass className="w-4 h-4 mr-2" />
+                      Explore Venues
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -601,13 +610,13 @@ export default function MakeDatePage() {
                       <div className="p-3 bg-blue-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
                         <Compass className="h-8 w-8 text-blue-600" />
                       </div>
-                      <h4 className="font-semibold text-lg mb-2 text-gray-900">Explore New Venues</h4>
+                      <h4 className="font-semibold text-lg mb-2 text-gray-900">Use AI?</h4>
                       <p className="text-sm text-gray-600 mb-4">
-                        Discover amazing places in your area
+                        Let AI help you plan the perfect date
                       </p>
-                      <Button onClick={() => router.push('/explore')} className="w-full bg-blue-600 hover:bg-blue-700">
+                      <Button onClick={() => router.push('/ai')} className="w-full bg-blue-600 hover:bg-blue-700">
                         <Compass className="h-4 w-4 mr-2" />
-                        Start Exploring
+                        Use AI
                       </Button>
                     </CardContent>
                   </Card>
